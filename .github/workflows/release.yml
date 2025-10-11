@@ -66,8 +66,6 @@ jobs:
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
@@ -78,6 +76,5 @@ jobs:
           manifest.json
           styles.css
           ai-vault-assistant.zip
-        overwrite: true
         fail_on_unmatched_files: false
 

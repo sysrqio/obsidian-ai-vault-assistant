@@ -3,7 +3,7 @@
   "name": "AI Vault Assistant",
   "version": "0.1.0",
   "minAppVersion": "0.15.0",
-  "description": "Like gemini-cli for Obsidian — AI-powered assistant with 26 vault tools for navigation, search, file management, and knowledge organization.",
+  "description": "Like gemini-cli for your vault — AI-powered assistant with 26 tools for navigation, search, file management, and knowledge organization.",
   "author": "Lukas Kasprowicz",
   "authorUrl": "",
   "isDesktopOnly": true

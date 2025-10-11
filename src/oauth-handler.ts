@@ -10,9 +10,7 @@ import { URL } from 'url';
 export class OAuthHandler {
 	private static readonly SCOPES = [
 		'https://www.googleapis.com/auth/cloud-platform',
-		'https://www.googleapis.com/auth/userinfo.email',
-		'https://www.googleapis.com/auth/generative-language.retriever',
-		'https://www.googleapis.com/auth/generative-language.peruserquota'
+		'https://www.googleapis.com/auth/userinfo.email'
 	];
 	private static readonly REDIRECT_PORTS = [53847, 53848, 53849, 53850, 53851];
 	private actualPort: number = 53847;

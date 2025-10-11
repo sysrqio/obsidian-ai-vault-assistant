@@ -23,4 +23,4 @@ coverage/
 
 # Temporary files
 *.tmp
-client_secret.json
+client_secret.json*

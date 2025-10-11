@@ -186,6 +186,11 @@ export class OAuthHandler {
 	 */
 	private async waitForAuthorizationCode(): Promise<string> {
 		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				clearInterval(checkInterval);
+				reject(new Error('OAuth timeout - no authorization code received within 5 minutes'));
+			}, 5 * 60 * 1000);
+			
 			const checkInterval = setInterval(() => {
 				if (this.authCode) {
 					clearInterval(checkInterval);
@@ -194,11 +199,6 @@ export class OAuthHandler {
 					this.authCode = null; // Reset for next use
 				}
 			}, 500);
-			
-			const timeout = setTimeout(() => {
-				clearInterval(checkInterval);
-				reject(new Error('OAuth timeout - no authorization code received within 5 minutes'));
-			}, 5 * 60 * 1000);
 		});
 	}
 	

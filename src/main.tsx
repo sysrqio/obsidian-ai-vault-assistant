@@ -118,9 +118,12 @@ export default class GeminiPlugin extends Plugin {
 			console.log('[Plugin] Starting OAuth flow...');
 			
 			const oauthHandler = new OAuthHandler();
-			const clientSecretPath = `${this.manifest.dir}/client_secret.json`;
+			// Use absolute path by combining vault adapter path with plugin dir
+			const vaultPath = (this.app.vault.adapter as any).basePath;
+			const clientSecretPath = `${vaultPath}/.obsidian/plugins/gemini-assistant/client_secret.json`;
 			
 			console.log('[Plugin] Initializing OAuth handler...');
+			console.log('[Plugin] Client secret path:', clientSecretPath);
 			await oauthHandler.initialize(clientSecretPath);
 			
 			console.log('[Plugin] Starting desktop OAuth flow (local HTTP server)...');

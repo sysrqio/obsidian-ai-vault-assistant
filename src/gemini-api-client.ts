@@ -214,40 +214,22 @@ export class DirectGeminiAPIClient {
 				const chunkStr = chunk.toString();
 				totalBytes += chunkStr.length;
 				console.log('[DirectAPI] Received bytes:', chunkStr.length);
-				
 				buffer += chunkStr;
-
-				// Try to parse complete JSON objects from buffer
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-				for (const line of lines) {
-					if (line.trim().startsWith('[')) {
-						// Start of JSON array
-						buffer = line + '\n' + buffer;
-					} else if (line.trim() === '' || line.trim() === ',') {
-						continue;
-					} else if (line.trim()) {
-						buffer = line + '\n' + buffer;
-					}
-				}
 			}
 
 			// Parse final buffer
 			if (buffer.trim()) {
 				console.log('[DirectAPI] ✅ Stream ended - response complete!');
 				console.log('[DirectAPI] Total response size:', totalBytes, 'bytes');
-				console.log('[DirectAPI] Raw response preview:', buffer.substring(0, 500));
+				console.log('[DirectAPI] Raw response (first 500 chars):', buffer.substring(0, 500));
+				console.log('[DirectAPI] Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
 				console.log('[DirectAPI] Parsing JSON array ...');
 
-				// Remove array brackets and parse
-				let jsonArray = buffer.trim();
-				if (jsonArray.startsWith('[') && jsonArray.endsWith(']')) {
-					jsonArray = jsonArray.slice(1, -1);
-				}
-
-				// Parse as single object (streaming returns array with one object)
-				const response = JSON.parse(jsonArray);
+				// The streaming endpoint returns a JSON array with a single response object
+				const responseArray = JSON.parse(buffer.trim());
+				
+				// Extract the single response object from the array
+				const response = Array.isArray(responseArray) ? responseArray[0] : responseArray;
 
 				console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 				console.log('[DirectAPI] ✅ RESPONSE PARSED:');

@@ -1259,11 +1259,19 @@ export class GeminiClient {
 				parts: [{ text: userMessage }]
 			});
 		} else {
-			// For first message, prepend system prompt
-			contents.push({
-				role: 'user',
-				parts: [{ text: systemPrompt + '\n\n' + userMessage }]
-			});
+			// For first message with SDK (non-OAuth), prepend system prompt to user message
+			// For Direct API (OAuth), system prompt is sent separately as system_instruction
+			if (usingDirectAPI) {
+				contents.push({
+					role: 'user',
+					parts: [{ text: userMessage }]
+				});
+			} else {
+				contents.push({
+					role: 'user',
+					parts: [{ text: systemPrompt + '\n\n' + userMessage }]
+				});
+			}
 		}
 
 		const effectiveModel = getEffectiveModel(this.settings.fallbackMode, this.settings.model);

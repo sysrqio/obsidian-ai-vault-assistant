@@ -117,10 +117,14 @@ export default class GeminiPlugin extends Plugin {
 		try {
 			console.log('[Plugin] Starting OAuth flow...');
 			
-			const proxyUrl = this.settings.oauthProxyUrl || 'https://oauth.sysrq.io/obsidian-ai-note-organizer';
-			console.log('[Plugin] Using proxy URL:', proxyUrl);
+			const oauthHandler = new OAuthHandler();
+			const clientSecretPath = `${this.manifest.dir}/client_secret.json`;
 			
-			const tokens = await OAuthHandler.startOAuthFlow(proxyUrl);
+			console.log('[Plugin] Initializing OAuth handler...');
+			await oauthHandler.initialize(clientSecretPath);
+			
+			console.log('[Plugin] Starting desktop OAuth flow (local HTTP server)...');
+			const tokens = await oauthHandler.startOAuthFlow();
 			
 			this.settings.oauthAccessToken = tokens.access_token;
 			this.settings.oauthRefreshToken = tokens.refresh_token;
@@ -129,11 +133,13 @@ export default class GeminiPlugin extends Plugin {
 			await this.saveSettings();
 			
 			new Notice('✅ OAuth authentication successful!');
+			console.log('[Plugin] OAuth tokens saved successfully');
 
+			// Reinitialize Gemini client with new tokens
 			await this.geminiClient?.initialize();
 
 		} catch (error) {
-			new Notice('❌ OAuth failed: ' + error.message);
+			new Notice('❌ OAuth failed: ' + (error as Error).message);
 			console.error('[Plugin] OAuth error:', error);
 		}
 	}

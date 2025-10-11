@@ -31,7 +31,10 @@ const context = await esbuild.context({
 		'@lezer/common',
 		'@lezer/highlight',
 		'@lezer/lr',
-		...builtins],
+		...builtins,
+		// External Node.js built-in modules with node: prefix
+		...builtins.map(m => `node:${m}`)
+	],
 	format: 'cjs',
 	target: 'es2018',
 	logLevel: "info",

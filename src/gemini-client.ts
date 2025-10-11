@@ -111,11 +111,13 @@ export class GeminiClient {
 					}
 
 					console.log('[Gemini] Token expired, refreshing...');
-					const proxyUrl = this.settings.oauthProxyUrl || 'https://oauth.sysrq.io/obsidian-ai-note-organizer';
-					const newTokens = await OAuthHandler.refreshToken(
-						this.settings.oauthRefreshToken,
-						proxyUrl
-					);
+					
+					// Initialize OAuth handler and refresh token
+					const oauthHandler = new OAuthHandler();
+					const clientSecretPath = `${this.vaultPath}/.obsidian/plugins/gemini-assistant/client_secret.json`;
+					await oauthHandler.initialize(clientSecretPath);
+					
+					const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
 
 					this.settings.oauthAccessToken = newTokens.access_token;
 					if (newTokens.refresh_token) {

@@ -54,23 +54,23 @@ export class DirectGeminiAPIClient {
 	}
 
 	/**
-	 * Generate content stream with OAuth
+	 * Generate content with OAuth (non-streaming for simpler implementation)
 	 */
-	async *generateContentStream(
+	async generateContent(
 		model: string,
 		contents: Content[],
 		systemInstruction: string,
 		tools: any[],
 		config: { temperature: number; maxOutputTokens: number }
-	): AsyncGenerator<any> {
+	): Promise<any> {
 		console.log('[DirectAPI] Making direct call to generativelanguage.googleapis.com');
 		console.log('[DirectAPI] Model:', model);
 		console.log('[DirectAPI] Using OAuth Bearer token with standard Gemini API');
-		console.log('[DirectAPI] Mode: streamGenerateContent (returns JSON array)');
+		console.log('[DirectAPI] Mode: generateContent (non-streaming)');
 
 		await this.fetchUserInfo();
 
-		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:streamGenerateContent`;
+		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:generateContent`;
 		
 		// CRITICAL: Manually serialize contents to ensure functionResponse is included
 		const serializedContents = contents.map((content, cidx) => {
@@ -218,38 +218,33 @@ export class DirectGeminiAPIClient {
 			}
 
 			// Parse final buffer
-			if (buffer.trim()) {
-				console.log('[DirectAPI] ✅ Stream ended - response complete!');
-				console.log('[DirectAPI] Total response size:', totalBytes, 'bytes');
-				console.log('[DirectAPI] Raw response (first 500 chars):', buffer.substring(0, 500));
-				console.log('[DirectAPI] Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
-				console.log('[DirectAPI] Parsing JSON array ...');
+			console.log('[DirectAPI] ✅ Response complete!');
+			console.log('[DirectAPI] Total response size:', totalBytes, 'bytes');
+			console.log('[DirectAPI] Raw response (first 500 chars):', buffer.substring(0, 500));
+			console.log('[DirectAPI] Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
+			console.log('[DirectAPI] Parsing JSON...');
 
-				// The streaming endpoint returns a JSON array with a single response object
-				const responseArray = JSON.parse(buffer.trim());
-				
-				// Extract the single response object from the array
-				const response = Array.isArray(responseArray) ? responseArray[0] : responseArray;
+			// Parse the complete response
+			const response = JSON.parse(buffer.trim());
 
-				console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-				console.log('[DirectAPI] ✅ RESPONSE PARSED:');
-				console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-				console.log('[DirectAPI] Candidates:', response.candidates?.length || 0);
-				console.log('[DirectAPI] Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
-				response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
-					if (p.text) console.log(`[DirectAPI] Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
-					if (p.functionCall) console.log(`[DirectAPI] Part ${i}: Function call:`, p.functionCall.name);
-					if (p.functionResponse) console.log(`[DirectAPI] Part ${i}: Function response:`, p.functionResponse.name);
-				});
-				console.log('[DirectAPI] Usage:', response.usageMetadata);
-				console.log('[DirectAPI] Full response:', JSON.stringify(response, null, 2));
-
-				yield response;
-			}
+			console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('[DirectAPI] ✅ RESPONSE PARSED:');
+			console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('[DirectAPI] Candidates:', response.candidates?.length || 0);
+			console.log('[DirectAPI] Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
+			response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
+				if (p.text) console.log(`[DirectAPI] Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
+				if (p.functionCall) console.log(`[DirectAPI] Part ${i}: Function call:`, p.functionCall.name);
+				if (p.functionResponse) console.log(`[DirectAPI] Part ${i}: Function response:`, p.functionResponse.name);
+			});
+			console.log('[DirectAPI] Usage:', response.usageMetadata);
+			console.log('[DirectAPI] Full response:', JSON.stringify(response, null, 2));
 
 			console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 			console.log('[DirectAPI] ✅ RESPONSE COMPLETE');
 			console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			
+			return response;
 
 		} catch (error: any) {
 			console.error('[DirectAPI] Stream error:', error);

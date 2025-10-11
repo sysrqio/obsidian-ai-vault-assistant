@@ -1300,7 +1300,8 @@ export class GeminiClient {
 
 			let stream;
 			if (usingDirectAPI) {
-				stream = this.directAPIClient!.generateContentStream(
+				// Direct API (OAuth) uses non-streaming generateContent
+				const response = await this.directAPIClient!.generateContent(
 					effectiveModel,
 					contents,
 					systemPrompt,
@@ -1310,6 +1311,10 @@ export class GeminiClient {
 						maxOutputTokens: this.settings.maxTokens
 					}
 				);
+				// Wrap in array to match SDK stream format
+				stream = (async function*() {
+					yield { candidates: response.candidates, usageMetadata: response.usageMetadata };
+				})();
 			} else if (this.googleGenAI) {
 				// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 				const config: any = {
@@ -1557,7 +1562,8 @@ export class GeminiClient {
 
 					let followUpStream;
 					if (usingDirectAPI) {
-						followUpStream = this.directAPIClient!.generateContentStream(
+						// Direct API (OAuth) uses non-streaming generateContent
+						const followUpResponse = await this.directAPIClient!.generateContent(
 							effectiveModel,
 							clonedHistory as Content[],
 							systemPrompt,
@@ -1567,6 +1573,10 @@ export class GeminiClient {
 								maxOutputTokens: this.settings.maxTokens
 							}
 						);
+						// Wrap in async generator to match SDK stream format
+						followUpStream = (async function*() {
+							yield { candidates: followUpResponse.candidates, usageMetadata: followUpResponse.usageMetadata };
+						})();
 					} else if (this.googleGenAI) {
 						// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 						const followUpConfig: any = {

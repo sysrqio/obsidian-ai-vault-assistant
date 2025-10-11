@@ -1,0 +1,83 @@
+name: Build and Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+        
+    - name: Build plugin
+      run: npm run build
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: gemini-assistant-plugin
+        path: main.js
+        retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+        
+    - name: Build plugin
+      run: npm run build
+        
+    - name: Show directory structure
+      run: |
+        echo "Current directory contents:"
+        ls -la
+        echo "Checking for required files:"
+        ls -la main.js manifest.json styles.css || echo "Some files missing"
+        echo "File sizes:"
+        wc -c main.js manifest.json styles.css || echo "Could not get file sizes"
+        
+    - name: Create release archive
+      run: zip -r gemini-assistant.zip main.js manifest.json styles.css
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        files: |
+          main.js
+          manifest.json
+          styles.css
+          gemini-assistant.zip
+        overwrite: true
+        fail_on_unmatched_files: false
+

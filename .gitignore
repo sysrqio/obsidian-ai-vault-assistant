@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+main.js
+*.map
+
+# OS files
+.DS_Store
+
+# User data
+data.json
+memory.json
+
+# Environment variables (API keys)
+.env
+.env.local
+.env.*
+
+# Test artifacts
+coverage/
+*.log
+
+# Temporary files
+*.tmp

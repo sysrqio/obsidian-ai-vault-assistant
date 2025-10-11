@@ -1,0 +1,41 @@
+{
+  "name": "obsidian-ai-vault-assistant",
+  "version": "0.1.0",
+  "description": "AI Vault Assistant - AI-powered vault management with 26 tools for navigation, search, and knowledge organization",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "jest --testPathIgnorePatterns=integration",
+    "test:unit": "jest --testPathIgnorePatterns=integration",
+    "test:integration": "RUN_INTEGRATION_TESTS=true jest tests/integration",
+    "test:all": "RUN_INTEGRATION_TESTS=true jest",
+    "test:watch": "jest --watch --testPathIgnorePatterns=integration",
+    "test:coverage": "jest --coverage --testPathIgnorePatterns=integration",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [],
+  "author": "Lukas Kasprowicz",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^16.11.6",
+    "@typescript-eslint/eslint-plugin": "5.29.0",
+    "@typescript-eslint/parser": "5.29.0",
+    "builtin-modules": "3.3.0",
+    "esbuild": "0.17.3",
+    "jest": "^29.5.0",
+    "obsidian": "latest",
+    "ts-jest": "^29.1.0",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  },
+  "dependencies": {
+    "@google/genai": "1.16.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0"
+  }
+}
+

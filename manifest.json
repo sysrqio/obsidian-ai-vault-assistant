@@ -1,0 +1,11 @@
+{
+  "id": "ai-vault-assistant",
+  "name": "AI Vault Assistant",
+  "version": "0.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "AI-powered assistant with 26 vault tools for navigation, search, file management, and knowledge organization. Supports multiple AI models including Google Gemini.",
+  "author": "Lukas Kasprowicz",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}
+

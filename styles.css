@@ -1,0 +1,546 @@
+/* Gemini Assistant Plugin Styles */
+
+/* Main chat container */
+.gemini-chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Header */
+.gemini-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background-color: var(--background-secondary);
+}
+
+.gemini-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.gemini-clear-button {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: var(--interactive-normal);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.gemini-clear-button:hover:not(:disabled) {
+    background-color: var(--interactive-hover);
+}
+
+.gemini-clear-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Messages container */
+.gemini-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Empty state */
+.gemini-empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+}
+
+.gemini-empty-state h4 {
+    font-size: 18px;
+    margin-bottom: 16px;
+    color: var(--text-normal);
+}
+
+.gemini-empty-state ul {
+    text-align: left;
+    max-width: 400px;
+    margin: 16px auto;
+    list-style-position: inside;
+}
+
+.gemini-empty-state li {
+    margin: 8px 0;
+    color: var(--text-muted);
+}
+
+.gemini-tools-hint {
+    margin-top: 20px;
+    font-size: 13px;
+}
+
+.gemini-tools-hint code {
+    background-color: var(--background-secondary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font-monospace);
+}
+
+/* Message bubbles */
+.gemini-message {
+    max-width: 95%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin: 4px 0;
+    word-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.gemini-message.user {
+    align-self: flex-end;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-bottom-right-radius: 4px;
+    margin-left: 10px; /* Small margin to left for more space */
+}
+
+.gemini-message.assistant {
+    align-self: flex-start;
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border-bottom-left-radius: 4px;
+    margin-right: 10px; /* Small margin to right for more space */
+}
+
+.gemini-message.system {
+    align-self: center;
+    background-color: rgba(255, 235, 59, 0.15);
+    color: var(--text-normal);
+    font-size: 0.9em;
+    max-width: 100%;
+    border: 1px solid rgba(255, 235, 59, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.gemini-message.system.error {
+	background-color: rgba(255, 0, 0, 0.08);
+	border: 1px solid rgba(255, 0, 0, 0.2);
+	border-left: 4px solid rgba(255, 0, 0, 0.6);
+}
+
+/* Message header with menu button */
+.gemini-message-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.gemini-message-content {
+    line-height: 1.6;
+    flex: 1;
+}
+
+/* Menu button */
+.gemini-message-menu-button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0.3;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.gemini-message:hover .gemini-message-menu-button {
+    opacity: 1;
+}
+
+.gemini-message-menu-button:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+/* Message menu dropdown */
+.gemini-message-menu {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    min-width: 140px;
+    z-index: 1000;
+}
+
+.gemini-menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--text-normal);
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gemini-menu-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.gemini-menu-item:first-child {
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+.gemini-menu-item:last-child {
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+/* Rendered markdown styling */
+.gemini-message-content .markdown-rendered {
+    font-size: inherit;
+    color: inherit;
+}
+
+.gemini-message-content .markdown-rendered h1,
+.gemini-message-content .markdown-rendered h2,
+.gemini-message-content .markdown-rendered h3,
+.gemini-message-content .markdown-rendered h4,
+.gemini-message-content .markdown-rendered h5,
+.gemini-message-content .markdown-rendered h6 {
+    margin-top: 0.5em;
+    margin-bottom: 0.3em;
+}
+
+.gemini-message-content .markdown-rendered p {
+    margin: 0.5em 0;
+}
+
+.gemini-message-content .markdown-rendered ul,
+.gemini-message-content .markdown-rendered ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.gemini-message-content .markdown-rendered li {
+    margin: 0.2em 0;
+}
+
+.gemini-message-content .markdown-rendered code {
+    background-color: var(--background-primary);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: var(--font-monospace);
+}
+
+.gemini-message-content .markdown-rendered pre {
+    background-color: var(--background-primary);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.gemini-message-content .markdown-rendered pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+.gemini-message-content .markdown-rendered blockquote {
+    border-left: 3px solid var(--background-modifier-border);
+    padding-left: 1em;
+    margin: 0.5em 0;
+    color: var(--text-muted);
+}
+
+.gemini-message-content .markdown-rendered a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.gemini-message-content .markdown-rendered a:hover {
+    text-decoration: underline;
+}
+
+/* Memories Section in Settings */
+.gemini-memories-container {
+    margin-top: 1em;
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+}
+
+.gemini-memory-item {
+    padding: 1em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background-color: var(--background-primary-alt);
+}
+
+.gemini-memory-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5em;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.gemini-memory-category {
+    display: inline-block;
+    padding: 2px 8px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.gemini-memory-date {
+    font-style: italic;
+}
+
+.gemini-memory-content {
+    margin: 0.5em 0;
+}
+
+.gemini-memory-textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 0.5em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    font-size: inherit;
+    resize: vertical;
+}
+
+.gemini-memory-textarea:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.gemini-memory-actions {
+    display: flex;
+    gap: 0.5em;
+    margin-top: 0.5em;
+}
+
+.gemini-memory-save-btn,
+.gemini-memory-delete-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+/* Tool calls display */
+.gemini-tool-calls {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.85em;
+}
+
+.gemini-tool-call {
+    margin: 6px 0;
+    padding: 6px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.gemini-tool-name {
+    font-weight: 600;
+}
+
+.gemini-tool-status {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.gemini-tool-result {
+    margin-top: 4px;
+    padding: 4px;
+    background-color: rgba(0, 255, 0, 0.1);
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.gemini-tool-error {
+    margin-top: 4px;
+    padding: 4px;
+    background-color: rgba(255, 0, 0, 0.1);
+    border-radius: 3px;
+    color: var(--text-error);
+    font-size: 0.9em;
+}
+
+/* Loading indicator */
+.gemini-loading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background-color: var(--background-secondary);
+    border-radius: 12px;
+    align-self: flex-start;
+    max-width: 95%;
+}
+
+.gemini-loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Input container */
+.gemini-input-container {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
+
+.gemini-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.gemini-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.gemini-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gemini-send-button {
+    padding: 8px 24px;
+    border-radius: 6px;
+    border: none;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-weight: 600;
+    cursor: pointer;
+    align-self: flex-end;
+}
+
+.gemini-send-button:hover:not(:disabled) {
+    background-color: var(--interactive-accent-hover);
+}
+
+.gemini-send-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Tool Confirmation Modal */
+.tool-confirmation-modal {
+    padding: 20px;
+}
+
+.tool-confirmation-modal h2 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: var(--text-normal);
+}
+
+.tool-confirmation-warning {
+    margin: 16px 0;
+    padding: 12px;
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 4px solid rgba(255, 193, 7, 0.8);
+    border-radius: 4px;
+}
+
+.tool-confirmation-warning p {
+    margin: 0;
+    font-weight: 500;
+}
+
+.tool-confirmation-details {
+    margin: 16px 0;
+    padding: 12px;
+    background-color: var(--background-secondary);
+    border-radius: 4px;
+}
+
+.tool-confirmation-setting {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tool-confirmation-setting:last-child {
+    border-bottom: none;
+}
+
+.tool-confirmation-remember {
+    margin: 16px 0;
+    padding: 12px;
+    background-color: rgba(255, 235, 59, 0.08);
+    border: 1px solid rgba(255, 235, 59, 0.2);
+    border-radius: 4px;
+}
+
+.tool-confirmation-remember h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--text-normal);
+}
+
+.tool-confirmation-buttons {
+    margin: 20px 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.tool-confirmation-buttons button {
+    min-width: 120px;
+}
+
+.tool-confirmation-safety {
+    margin: 16px 0;
+    padding: 12px;
+    background-color: rgba(33, 150, 243, 0.1);
+    border-left: 4px solid rgba(33, 150, 243, 0.6);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.tool-confirmation-safety p {
+    margin: 0;
+    color: var(--text-muted);
+}
+
+/* Ribbon icon */
+.gemini-ribbon-class {
+    color: var(--interactive-accent);
+}

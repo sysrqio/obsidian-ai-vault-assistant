@@ -549,9 +549,48 @@ export class GeminiSettingTab extends PluginSettingTab {
 		}
 
 		try {
+			// DEBUGGING: Inspect the access token to see what scopes it actually has
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('🔍 OAUTH TOKEN INSPECTION');
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('CURRENT ACCESS TOKEN:', this.plugin.settings.oauthAccessToken);
+			console.log('Token expires at:', new Date((this.plugin.settings.oauthExpiresAt || 0) * 1000).toISOString());
+			
+			// Inspect token scopes using Google's tokeninfo endpoint
+			const tokenInfoResponse = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${this.plugin.settings.oauthAccessToken}`);
+			const tokenInfo = await tokenInfoResponse.json();
+			
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('📋 TOKEN INFO FROM GOOGLE:');
+			console.log(JSON.stringify(tokenInfo, null, 2));
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			
+			if (tokenInfo.scope) {
+				const scopes = tokenInfo.scope.split(' ');
+				console.log('🔐 GRANTED SCOPES:');
+				scopes.forEach((scope: string) => {
+					const hasCloudPlatform = scope.includes('cloud-platform');
+					console.log(`  ${hasCloudPlatform ? '✅' : '  '} ${scope}`);
+				});
+				
+				const hasRequiredScope = scopes.some((s: string) => s.includes('cloud-platform'));
+				if (!hasRequiredScope) {
+					console.error('❌ MISSING REQUIRED SCOPE: https://www.googleapis.com/auth/cloud-platform');
+					console.error('   You need to:');
+					console.error('   1. Update your GCP OAuth consent screen to include cloud-platform scope');
+					console.error('   2. Log out and re-authenticate in the plugin settings');
+					new Notice('❌ Token missing cloud-platform scope! Check console for details.');
+					return;
+				} else {
+					console.log('✅ Token has cloud-platform scope!');
+				}
+			}
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			
 			// Test API call using the OAuth token with generateContent (not ListModels)
 			// We test with a simple content generation request since cloud-platform scope
 			// is sufficient for generateContent but not for ListModels
+			console.log('🧪 Testing generateContent endpoint...');
 			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent', {
 				method: 'POST',
 				headers: {

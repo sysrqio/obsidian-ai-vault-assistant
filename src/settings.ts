@@ -549,21 +549,32 @@ export class GeminiSettingTab extends PluginSettingTab {
 		}
 
 		try {
-			// Test API call using the OAuth token
-			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+			// Test API call using the OAuth token with generateContent (not ListModels)
+			// We test with a simple content generation request since cloud-platform scope
+			// is sufficient for generateContent but not for ListModels
+			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent', {
+				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${this.plugin.settings.oauthAccessToken}`,
-				}
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					contents: [{
+						parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }]
+					}]
+				})
 			});
 
 			if (response.ok) {
-				new Notice('✅ OAuth API test successful!');
+				const data = await response.json();
+				const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
+				new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
 			} else {
 				const errorText = await response.text();
-				new Notice(`❌ OAuth API test failed: ${response.status} ${errorText}`);
+				new Notice(`❌ OAuth API test failed: ${response.status} ${errorText.substring(0, 100)}`);
 			}
 		} catch (error) {
-			new Notice(`❌ OAuth API test error: ${error.message}`);
+			new Notice(`❌ OAuth API test error: ${(error as Error).message}`);
 		}
 	}
 }

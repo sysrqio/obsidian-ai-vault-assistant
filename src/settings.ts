@@ -591,7 +591,7 @@ export class GeminiSettingTab extends PluginSettingTab {
 			// We test with a simple content generation request since cloud-platform scope
 			// is sufficient for generateContent but not for ListModels
 			console.log('🧪 Testing generateContent endpoint...');
-			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent', {
+			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent', {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${this.plugin.settings.oauthAccessToken}`,

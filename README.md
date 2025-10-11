@@ -1,6 +1,6 @@
 # AI Vault Assistant for Obsidian
 
-AI-powered assistant with 26 comprehensive vault tools for navigation, search, file management, and knowledge organization. Currently powered by Google Gemini with support for multiple AI models.
+**Like [gemini-cli](https://github.com/google-gemini/gemini-cli) for Obsidian** — an AI-powered assistant with 26 comprehensive vault tools for navigation, search, file management, and knowledge organization. Currently powered by Google Gemini with support for multiple AI models.
 
 ## Features
 

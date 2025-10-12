@@ -587,29 +587,70 @@ export class GeminiSettingTab extends PluginSettingTab {
 			}
 			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 			
-			// Test API call using the OAuth token with generateContent (not ListModels)
-			// We test with a simple content generation request since cloud-platform scope
-			// is sufficient for generateContent but not for ListModels
-			console.log('🧪 Testing generateContent endpoint...');
-			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+			// Test API call using the OAuth token with Code Assist API (gemini-cli format)
+			console.log('🧪 Testing Code Assist API endpoint (gemini-cli format)...');
+			
+			// Generate session and prompt IDs like gemini-cli
+			const generateUUID = () => {
+				return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+					const r = Math.random() * 16 | 0;
+					const v = c === 'x' ? r : (r & 0x3 | 0x8);
+					return v.toString(16);
+				});
+			};
+			
+			const sessionId = generateUUID();
+			const userPromptId = `${generateUUID()}########1`;
+			
+			const response = await fetch('https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse', {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${this.plugin.settings.oauthAccessToken}`,
 					'Content-Type': 'application/json',
+					'User-Agent': 'AIVaultAssistant/0.1.0 (Obsidian) google-api-nodejs-client/9.15.1',
+					'x-goog-api-client': 'gl-node/0.1.0'
 				},
 				body: JSON.stringify({
-					contents: [{
-						parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }]
-					}]
+					model: 'gemini-2.5-flash',
+					project: 'natural-citron-81vqp',
+					user_prompt_id: userPromptId,
+					request: {
+						contents: [{
+							role: 'user',
+							parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }]
+						}],
+						generationConfig: {
+							temperature: 0.7,
+							topP: 1
+						}
+					},
+					session_id: sessionId
 				})
 			});
 
 			if (response.ok) {
-				const data = await response.json();
-				const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
-				new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
+				const responseText = await response.text();
+				console.log('🔍 Raw SSE response:', responseText.substring(0, 500));
+				
+				// Parse SSE format: extract last "data:" line
+				const lines = responseText.split('\n');
+				const dataLines = lines.filter(line => line.trim().startsWith('data:'));
+				
+				if (dataLines.length > 0) {
+					const lastDataLine = dataLines[dataLines.length - 1];
+					const jsonStr = lastDataLine.substring(5).trim(); // Remove "data:" prefix
+					const data = JSON.parse(jsonStr);
+					
+					const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
+					console.log('✅ Parsed response text:', text);
+					new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
+				} else {
+					console.error('❌ No data lines in SSE response');
+					new Notice('❌ OAuth API test failed: Invalid SSE response format');
+				}
 			} else {
 				const errorText = await response.text();
+				console.error('❌ API error:', errorText);
 				new Notice(`❌ OAuth API test failed: ${response.status} ${errorText.substring(0, 100)}`);
 			}
 		} catch (error) {

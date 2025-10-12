@@ -607,8 +607,10 @@ export class GeminiSettingTab extends PluginSettingTab {
 				headers: {
 					'Authorization': `Bearer ${this.plugin.settings.oauthAccessToken}`,
 					'Content-Type': 'application/json',
-					'User-Agent': 'AIVaultAssistant/0.1.0 (Obsidian) google-api-nodejs-client/9.15.1',
-					'x-goog-api-client': 'gl-node/0.1.0'
+					'Accept': '*/*',
+					// Match gemini-cli header values as closely as possible
+					'User-Agent': 'GeminiCLI/v24.9.0 (darwin; arm64) google-api-nodejs-client/9.15.1',
+					'x-goog-api-client': 'gl-node/24.9.0'
 				},
 				body: JSON.stringify({
 					model: 'gemini-2.5-flash',
@@ -623,6 +625,11 @@ export class GeminiSettingTab extends PluginSettingTab {
 							temperature: 0.7,
 							topP: 1
 						}
+					},
+					// Provide a minimal systemInstruction like gemini-cli does
+					systemInstruction: {
+						role: 'user',
+						parts: [{ text: 'You are a helpful assistant. Keep answers concise.' }]
 					},
 					session_id: sessionId
 				})

@@ -10,7 +10,8 @@ import { URL } from 'url';
 export class OAuthHandler {
 	private static readonly SCOPES = [
 		'https://www.googleapis.com/auth/cloud-platform',
-		'https://www.googleapis.com/auth/userinfo.email'
+		'https://www.googleapis.com/auth/userinfo.email',
+		'https://www.googleapis.com/auth/userinfo.profile'
 	];
 	private static readonly REDIRECT_PORTS = [53847, 53848, 53849, 53850, 53851];
 	private actualPort: number = 53847;
@@ -63,8 +64,8 @@ export class OAuthHandler {
 		const { server, port } = await this.startLocalServer();
 		this.actualPort = port;
 		
-		// Create OAuth2Client with the actual redirect URI
-		const redirectUri = `http://127.0.0.1:${port}/callback`;
+		// Create OAuth2Client with the actual redirect URI (match gemini-cli format)
+		const redirectUri = `http://localhost:${port}/oauth2callback`;
 		this.oauth2Client = new OAuth2Client(
 			this.clientId,
 			this.clientSecret,
@@ -122,9 +123,9 @@ export class OAuthHandler {
 					return;
 				}
 				
-				const url = new URL(req.url, `http://127.0.0.1:${this.actualPort}`);
+				const url = new URL(req.url, `http://localhost:${this.actualPort}`);
 				
-				if (url.pathname === '/callback') {
+				if (url.pathname === '/oauth2callback') {
 					const code = url.searchParams.get('code');
 					const error = url.searchParams.get('error');
 					
@@ -157,8 +158,8 @@ export class OAuthHandler {
 				const port = OAuthHandler.REDIRECT_PORTS[currentPortIndex];
 				this.actualPort = port;
 				
-				server.listen(port, '127.0.0.1', () => {
-					console.log(`[OAuth] Local server listening on http://127.0.0.1:${port}`);
+				server.listen(port, 'localhost', () => {
+					console.log(`[OAuth] Local server listening on http://localhost:${port}/oauth2callback`);
 					resolve({ server, port });
 				});
 				
@@ -380,7 +381,7 @@ export class OAuthHandler {
 		console.log('[OAuth] Refreshing access token...');
 		
 		// Create temporary OAuth2Client for token refresh
-		const redirectUri = `http://127.0.0.1:${OAuthHandler.REDIRECT_PORTS[0]}/callback`;
+		const redirectUri = `http://localhost:${OAuthHandler.REDIRECT_PORTS[0]}/oauth2callback`;
 		const client = new OAuth2Client(
 			this.clientId,
 			this.clientSecret,
@@ -417,7 +418,7 @@ export class OAuthHandler {
 		}
 		
 		// Use first port as default redirect URI (doesn't matter for token refresh)
-		const redirectUri = `http://127.0.0.1:${OAuthHandler.REDIRECT_PORTS[0]}/callback`;
+		const redirectUri = `http://localhost:${OAuthHandler.REDIRECT_PORTS[0]}/oauth2callback`;
 		
 		const client = new OAuth2Client(
 			this.clientId,

@@ -623,13 +623,9 @@ export class GeminiSettingTab extends PluginSettingTab {
 						}],
 						generationConfig: {
 							temperature: 0.7,
-							topP: 1
+							topP: 1,
+							candidateCount: 1
 						}
-					},
-					// Provide a minimal systemInstruction like gemini-cli does
-					systemInstruction: {
-						role: 'user',
-						parts: [{ text: 'You are a helpful assistant. Keep answers concise.' }]
 					},
 					session_id: sessionId
 				})

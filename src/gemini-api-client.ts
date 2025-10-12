@@ -8,19 +8,31 @@ import type { Content } from '@google/genai';
 
 export class DirectGeminiAPIClient {
 	private accessToken: string;
-	private quotaUser: string | null = null;
-	private baseUrl = 'https://generativelanguage.googleapis.com';
-	private apiVersion = 'v1beta';
+	private userId: string | null = null;
+	private baseUrl = 'https://cloudcode-pa.googleapis.com';
+	private apiVersion = 'v1internal';
+	private projectId = 'natural-citron-81vqp'; // Gemini Code Assist project
 
 	constructor(accessToken: string) {
 		this.accessToken = accessToken;
 	}
 
 	/**
-	 * Fetch user info for quota delegation
+	 * Generate UUID for session and prompt tracking
+	 */
+	private generateUUID(): string {
+		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+			const r = Math.random() * 16 | 0;
+			const v = c === 'x' ? r : (r & 0x3 | 0x8);
+			return v.toString(16);
+		});
+	}
+
+	/**
+	 * Fetch user info
 	 */
 	async fetchUserInfo(): Promise<void> {
-		if (this.quotaUser) return; // Already fetched
+		if (this.userId) return; // Already fetched
 
 		try {
 			const url = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
@@ -45,11 +57,11 @@ export class DirectGeminiAPIClient {
 				req.end();
 			});
 
-			this.quotaUser = response.id;
-			console.log('[DirectAPI] ✅ User ID fetched for quota delegation:', this.quotaUser);
+			this.userId = response.id;
+			console.log('[DirectAPI] ✅ User ID fetched:', this.userId);
 		} catch (error) {
 			console.error('[DirectAPI] Failed to fetch user info:', error);
-			// Continue without quota delegation
+			throw error; // This is required for the API call
 		}
 	}
 
@@ -63,14 +75,14 @@ export class DirectGeminiAPIClient {
 		tools: any[],
 		config: { temperature: number; maxOutputTokens: number }
 	): Promise<any> {
-		console.log('[DirectAPI] Making direct call to generativelanguage.googleapis.com');
+		console.log('[DirectAPI] Making direct call to cloudcode-pa.googleapis.com');
 		console.log('[DirectAPI] Model:', model);
-		console.log('[DirectAPI] Using OAuth Bearer token with standard Gemini API');
-		console.log('[DirectAPI] Mode: generateContent (non-streaming)');
+		console.log('[DirectAPI] Using OAuth Bearer token with Gemini Code Assist API');
+		console.log('[DirectAPI] Mode: streamGenerateContent with SSE');
 
 		await this.fetchUserInfo();
 
-		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:generateContent`;
+		const url = `${this.baseUrl}/${this.apiVersion}:streamGenerateContent?alt=sse`;
 		
 		// CRITICAL: Manually serialize contents to ensure functionResponse is included
 		const serializedContents = contents.map((content, cidx) => {
@@ -114,27 +126,38 @@ export class DirectGeminiAPIClient {
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
 			'Authorization': `Bearer ${this.accessToken}`,
+			'User-Agent': 'AIVaultAssistant/0.1.0 (Obsidian) google-api-nodejs-client/9.15.1',
+			'x-goog-api-client': 'gl-node/0.1.0'
 		};
 
-		if (this.quotaUser) {
-			headers['X-Goog-Quota-User'] = this.quotaUser;
-			console.log('[DirectAPI] 💳 Using X-Goog-Quota-User for billing delegation:', this.quotaUser);
-		}
+		// Generate unique IDs for session and prompt
+		const sessionId = this.generateUUID();
+		const userPromptId = `${this.generateUUID()}########1`;
 
-		const body: any = {
+		// Wrap the request in gemini-cli format
+		const innerRequest: any = {
 			contents: serializedContents,
 			generationConfig: {
 				temperature: config.temperature,
-				maxOutputTokens: config.maxOutputTokens,
+				topP: 1,
 			},
-			system_instruction: {
+			systemInstruction: {
+				role: 'user',
 				parts: [{ text: systemInstruction }]
 			}
 		};
 
 		if (tools && tools.length > 0) {
-			body.tools = tools;
+			innerRequest.tools = tools;
 		}
+
+		const body: any = {
+			model: model,
+			project: this.projectId,
+			user_prompt_id: userPromptId,
+			request: innerRequest,
+			session_id: sessionId
+		};
 
 		console.log('[DirectAPI] ✅ Using correct REST API systemInstruction format (object)');
 		console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -217,15 +240,25 @@ export class DirectGeminiAPIClient {
 				buffer += chunkStr;
 			}
 
-			// Parse final buffer
+			// Parse final buffer (SSE format)
 			console.log('[DirectAPI] ✅ Response complete!');
 			console.log('[DirectAPI] Total response size:', totalBytes, 'bytes');
 			console.log('[DirectAPI] Raw response (first 500 chars):', buffer.substring(0, 500));
 			console.log('[DirectAPI] Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
-			console.log('[DirectAPI] Parsing JSON...');
+			console.log('[DirectAPI] Parsing SSE response...');
 
-			// Parse the complete response
-			const response = JSON.parse(buffer.trim());
+			// Parse SSE format: multiple "data: {...}" lines
+			const lines = buffer.split('\n');
+			const dataLines = lines.filter(line => line.trim().startsWith('data:'));
+			
+			if (dataLines.length === 0) {
+				throw new Error('No data lines found in SSE response');
+			}
+			
+			// Parse the last data line (final response)
+			const lastDataLine = dataLines[dataLines.length - 1];
+			const jsonStr = lastDataLine.substring(5).trim(); // Remove "data:" prefix
+			const response = JSON.parse(jsonStr);
 
 			console.log('[DirectAPI] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 			console.log('[DirectAPI] ✅ RESPONSE PARSED:');
@@ -272,10 +305,7 @@ export class DirectGeminiAPIClient {
 			'Authorization': `Bearer ${this.accessToken}`,
 		};
 
-		if (this.quotaUser) {
-			headers['X-Goog-Quota-User'] = this.quotaUser;
-			console.log('[DirectAPI] 💳 Using quota delegation for search');
-		}
+		// No quota header needed for Code Assist API
 
 		const body = {
 			contents: contents.map(c => ({

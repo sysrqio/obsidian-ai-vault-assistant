@@ -22,11 +22,12 @@ export default class GeminiPlugin extends Plugin {
 		this.vaultAdapter = new VaultAdapter(this.app.vault);
 		Logger.debug('Plugin', 'Vault adapter initialized');
 
-		const vaultPath = (this.app.vault.adapter as any).basePath || '';
-		const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
-		Logger.debug('Plugin', `Vault path: ${vaultPath}`);
-		Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
-		this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
+	const vaultPath = (this.app.vault.adapter as any).basePath || '';
+	// Use relative path for DataAdapter (relative to vault root)
+	const pluginDataPath = `${this.app.vault.configDir}/plugins/gemini-assistant`;
+	Logger.debug('Plugin', `Vault path: ${vaultPath}`);
+	Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
+	this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
 		Logger.debug('Plugin', 'Gemini client created');
 
 		this.registerView(
@@ -100,7 +101,8 @@ export default class GeminiPlugin extends Plugin {
 		
 		if (this.vaultAdapter && this.geminiClient) {
 			const vaultPath = (this.app.vault.adapter as any).basePath || '';
-			const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
+			// Use relative path for DataAdapter (relative to vault root)
+			const pluginDataPath = `${this.app.vault.configDir}/plugins/gemini-assistant`;
 			this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
 			
 			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINI);

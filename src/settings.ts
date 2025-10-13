@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	enableFileTools: true,
 	fallbackMode: false,
 	renderMarkdown: true,
-	logLevel: 'info',
+	logLevel: 'warn', // Default to warn for production (only show warnings and errors)
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -179,16 +179,16 @@ export class GeminiSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		new Setting(containerEl)
-			.setName('Log Level')
-			.setDesc('Control console logging verbosity. Debug shows all logs, Info shows important events, Warn shows only warnings, Error shows only errors, None disables all logs.')
-			.addDropdown(dropdown => dropdown
-				.addOption('debug', 'Debug (All logs)')
-				.addOption('info', 'Info (Default)')
-				.addOption('warn', 'Warn (Warnings only)')
-				.addOption('error', 'Error (Errors only)')
-				.addOption('none', 'None (Silent)')
-				.setValue(this.plugin.settings.logLevel)
+	new Setting(containerEl)
+		.setName('Log Level')
+		.setDesc('Control console logging verbosity. Default: Warn (recommended for production). Use Debug for troubleshooting.')
+		.addDropdown(dropdown => dropdown
+			.addOption('warn', 'Warn (Recommended - Warnings & Errors only)')
+			.addOption('error', 'Error (Errors only)')
+			.addOption('info', 'Info (Important events)')
+			.addOption('debug', 'Debug (All logs - verbose)')
+			.addOption('none', 'None (Silent)')
+			.setValue(this.plugin.settings.logLevel)
 				.onChange(async (value: LogLevel) => {
 					this.plugin.settings.logLevel = value;
 					Logger.setLevel(value);

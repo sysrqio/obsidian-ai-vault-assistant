@@ -126,8 +126,10 @@ export class DirectGeminiAPIClient {
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
 			'Authorization': `Bearer ${this.accessToken}`,
-			'User-Agent': 'AIVaultAssistant/0.1.0 (Obsidian) google-api-nodejs-client/9.15.1',
-			'x-goog-api-client': 'gl-node/0.1.0'
+			'Accept': '*/*',
+			// Align with gemini-cli headers
+			'User-Agent': 'GeminiCLI/v24.9.0 (darwin; arm64) google-api-nodejs-client/9.15.1',
+			'x-goog-api-client': 'gl-node/24.9.0'
 		};
 
 		// Generate unique IDs for session and prompt
@@ -140,10 +142,7 @@ export class DirectGeminiAPIClient {
 			generationConfig: {
 				temperature: config.temperature,
 				topP: 1,
-			},
-			systemInstruction: {
-				role: 'user',
-				parts: [{ text: systemInstruction }]
+				candidateCount: 1
 			}
 		};
 
@@ -156,6 +155,10 @@ export class DirectGeminiAPIClient {
 			project: this.projectId,
 			user_prompt_id: userPromptId,
 			request: innerRequest,
+			systemInstruction: systemInstruction ? {
+				role: 'user',
+				parts: [{ text: systemInstruction }]
+			} : undefined,
 			session_id: sessionId
 		};
 
@@ -189,7 +192,8 @@ export class DirectGeminiAPIClient {
 		const options: https.RequestOptions = {
 			hostname: urlObj.hostname,
 			port: 443,
-			path: urlObj.pathname,
+			// Ensure query string (?alt=sse) is included; otherwise endpoint schema differs
+			path: `${urlObj.pathname}${urlObj.search}`,
 			method: 'POST',
 			headers: {
 				...headers,

@@ -28,7 +28,11 @@ export default class GeminiPlugin extends Plugin {
 	Logger.debug('Plugin', `Vault path: ${vaultPath}`);
 	Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
 	this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
-		Logger.debug('Plugin', 'Gemini client created');
+	Logger.debug('Plugin', 'Gemini client created');
+	
+	// Initialize the client (loads memories and sets up API)
+	await this.geminiClient.initialize();
+	Logger.debug('Plugin', 'Gemini client initialized');
 
 		this.registerView(
 			VIEW_TYPE_GEMINI,

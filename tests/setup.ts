@@ -79,7 +79,6 @@ export const mockSettings = {
 	oauthRefreshToken: '',
 	oauthTokenExpiry: 0,
 	enableFileTools: true,
-	enableShellTools: false,
 	fallbackMode: false,
 	renderMarkdown: true,
 	logLevel: 'error' as const, // Suppress logs in tests

@@ -17,6 +17,10 @@ memory.json
 .env.local
 .env.*
 
+# OAuth credentials
+client_secret.json
+client_secret.json.*
+
 # Test artifacts
 coverage/
 *.log

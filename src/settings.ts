@@ -501,27 +501,32 @@ export class GeminiSettingTab extends PluginSettingTab {
 			const actionsDiv = memoryDiv.createDiv({ cls: 'gemini-memory-actions' });
 			
 			// Save button (only shows if edited)
-			const saveButton = actionsDiv.createEl('button', {
-				text: 'Save',
-				cls: 'mod-cta gemini-memory-save-btn'
-			});
-			saveButton.style.display = 'none';
-			
-			saveButton.addEventListener('click', async () => {
-				const newFact = textarea.value.trim();
-				if (newFact && newFact !== memory.fact) {
-					await memoryManager.deleteMemory(memory.id);
-					await memoryManager.addMemory(newFact, memory.category);
-					new Notice('Memory updated');
-					this.display();
-				}
-			});
+		const saveButton = actionsDiv.createEl('button', {
+			text: 'Save',
+			cls: 'mod-cta gemini-memory-save-btn is-hidden'
+		});
+		
+		saveButton.addEventListener('click', async () => {
+			const newFact = textarea.value.trim();
+			if (newFact && newFact !== memory.fact) {
+				await memoryManager.deleteMemory(memory.id);
+				await memoryManager.addMemory(newFact, memory.category);
+				new Notice('Memory updated');
+				this.display();
+			}
+		});
 
-			// Show save button when textarea changes
-			textarea.addEventListener('input', () => {
-				const hasChanges = textarea.value.trim() !== memory.fact;
-				saveButton.style.display = hasChanges ? 'inline-block' : 'none';
-			});
+		// Show save button when textarea changes
+		textarea.addEventListener('input', () => {
+			const hasChanges = textarea.value.trim() !== memory.fact;
+			if (hasChanges) {
+				saveButton.removeClass('is-hidden');
+				saveButton.addClass('is-visible');
+			} else {
+				saveButton.removeClass('is-visible');
+				saveButton.addClass('is-hidden');
+			}
+		});
 
 			// Delete button
 			const deleteButton = actionsDiv.createEl('button', {

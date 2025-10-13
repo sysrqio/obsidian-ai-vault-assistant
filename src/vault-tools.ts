@@ -563,12 +563,13 @@ export class VaultTools {
 		
 		const fileName = file.basename;
 		
+		// Use app.fileManager.trashFile to respect user preferences
+		await this.app.fileManager.trashFile(file);
+		
 		if (permanent) {
-			await this.app.vault.delete(file);
-			return `Permanently deleted: ${fileName}`;
+			return `Permanently deleted (according to user settings): ${fileName}`;
 		} else {
-			await this.app.vault.trash(file, true); // true = use system trash
-			return `Moved to trash: ${fileName}`;
+			return `Deleted (according to user settings): ${fileName}`;
 		}
 	}
 

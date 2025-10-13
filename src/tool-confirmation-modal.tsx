@@ -1,5 +1,6 @@
 import { App, Modal, Setting } from 'obsidian';
 import * as React from 'react';
+import { Logger } from './utils/logger';
 
 export interface ToolConfirmationData {
 	toolName: string;
@@ -27,8 +28,8 @@ export class ToolConfirmationModal extends Modal {
 	}
 
 	private handleReject() {
-		console.log('[Modal] User rejected:', this.data.toolName);
-		console.log('[Modal] Remember choice:', this.rememberChoice);
+		Logger.debug('Modal', 'User rejected:', this.data.toolName);
+		Logger.debug('Modal', 'Remember choice:', this.rememberChoice);
 		
 		if (this.rememberChoice === 'never') {
 			this.onApprove('never').then(() => {
@@ -46,12 +47,12 @@ export class ToolConfirmationModal extends Modal {
 		
 		// Handle ESC key to reject
 		this.scope.register([], 'Escape', () => {
-			console.log('[Modal] ESC key pressed, rejecting tool');
+			Logger.debug('Modal', 'ESC key pressed, rejecting tool');
 			this.handleReject();
 			return false;
 		});
 		
-		console.log('[Modal] Opening tool confirmation modal for:', this.data.toolName);
+		Logger.debug('Modal', 'Opening tool confirmation modal for:', this.data.toolName);
 
 		contentEl.empty();
 		contentEl.addClass('tool-confirmation-modal');
@@ -230,8 +231,8 @@ export class ToolConfirmationModal extends Modal {
 				.setButtonText('✓ Approve & Execute')
 				.setCta()
 				.onClick(async () => {
-					console.log('[Tool] User approved:', this.data.toolName);
-					console.log('[Tool] Remember choice:', this.rememberChoice);
+					Logger.debug('Tool', 'User approved:', this.data.toolName);
+					Logger.debug('Tool', 'Remember choice:', this.rememberChoice);
 					
 					if (this.rememberChoice !== 'once') {
 						await this.onApprove(this.rememberChoice);

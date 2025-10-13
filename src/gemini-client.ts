@@ -16,6 +16,7 @@ import { OAuthHandler } from './oauth-handler';
 import { DirectGeminiAPIClient } from './gemini-api-client';
 import { MemoryManager } from './memory-manager';
 import { VaultTools } from './vault-tools';
+import { Logger } from './utils/logger';
 import type { App } from 'obsidian';
 
 export interface Message {
@@ -82,26 +83,26 @@ export class GeminiClient {
 		const originalGcpCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 		
 		try {
-			delete process.env.GOOGLE_CLOUD_PROJECT;
-			delete process.env.GOOGLE_CLOUD_LOCATION;
-			delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
-			delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-			
-			console.log('[Gemini] Cleared GCP environment variables to prevent metadata service calls');
-			console.log('[Gemini] GOOGLE_CLOUD_PROJECT: undefined (cleared)');
-			console.log('[Gemini] GOOGLE_CLOUD_LOCATION: undefined (cleared)');
-			console.log('[Gemini] GOOGLE_GENAI_USE_VERTEXAI: undefined (cleared)');
+		delete process.env.GOOGLE_CLOUD_PROJECT;
+		delete process.env.GOOGLE_CLOUD_LOCATION;
+		delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+		delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+		
+		Logger.debug('Gemini', 'Cleared GCP environment variables to prevent metadata service calls');
+		Logger.debug('Gemini', 'GOOGLE_CLOUD_PROJECT: undefined (cleared)');
+		Logger.debug('Gemini', 'GOOGLE_CLOUD_LOCATION: undefined (cleared)');
+		Logger.debug('Gemini', 'GOOGLE_GENAI_USE_VERTEXAI: undefined (cleared)');
 			
 			if (this.settings.useOAuth) {
-				console.log('[Gemini] Initializing with OAuth authentication');
-				console.log('[Gemini] Using Standard Gemini API (like ai-note-organizer)');
-				console.log('[Gemini] ✅ No GCP project required');
+				Logger.debug('Gemini', 'Initializing with OAuth authentication');
+				Logger.debug('Gemini', 'Using Standard Gemini API (like ai-note-organizer)');
+				Logger.debug('Gemini', '✅ No GCP project required');
 				
 				if (!this.settings.oauthAccessToken) {
 					throw new Error('OAuth not authenticated. Please authenticate in settings.');
 				}
 
-				console.log('[Gemini] OAuth token present, checking expiry...');
+				Logger.debug('Gemini', 'OAuth token present, checking expiry...');
 				
 				if (this.settings.oauthExpiresAt && 
 					OAuthHandler.isTokenExpired(this.settings.oauthExpiresAt)) {
@@ -110,7 +111,7 @@ export class GeminiClient {
 						throw new Error('OAuth token expired and no refresh token available');
 					}
 
-					console.log('[Gemini] Token expired, refreshing...');
+					Logger.debug('Gemini', 'Token expired, refreshing...');
 					const proxyUrl = this.settings.oauthProxyUrl || 'https://oauth.sysrq.io/obsidian-ai-note-organizer';
 					const newTokens = await OAuthHandler.refreshToken(
 						this.settings.oauthRefreshToken,
@@ -123,21 +124,21 @@ export class GeminiClient {
 					}
 					this.settings.oauthExpiresAt = Date.now() / 1000 + newTokens.expires_in;
 					
-					console.log('[Gemini] Token refreshed successfully');
+					Logger.debug('Gemini', 'Token refreshed successfully');
 					new Notice('OAuth token refreshed');
 				} else {
-					console.log('[Gemini] Token still valid');
+					Logger.debug('Gemini', 'Token still valid');
 				}
 
 				this.directAPIClient = new DirectGeminiAPIClient(this.settings.oauthAccessToken);
 				this.googleGenAI = null;
 
-				console.log('[Gemini] Standard Gemini API client initialized with OAuth');
-				console.log('[Gemini] Using generativelanguage.googleapis.com with direct fetch()');
-				console.log('[Gemini] ✅ Quota delegation enabled (billing to user account)');
+				Logger.debug('Gemini', 'Standard Gemini API client initialized with OAuth');
+				Logger.debug('Gemini', 'Using generativelanguage.googleapis.com with direct fetch()');
+				Logger.debug('Gemini', '✅ Quota delegation enabled (billing to user account)');
 
 			} else {
-				console.log('[Gemini] Initializing with API key authentication');
+				Logger.debug('Gemini', 'Initializing with API key authentication');
 				
 				if (!this.settings.apiKey) {
 					throw new Error('API key must be configured');
@@ -148,8 +149,8 @@ export class GeminiClient {
 					'User-Agent': userAgent,
 				};
 
-				console.log('[Gemini] Creating GoogleGenAI client with API key');
-				console.log('[Gemini] Using generativelanguage.googleapis.com endpoint (vertexai: false)');
+				Logger.debug('Gemini', 'Creating GoogleGenAI client with API key');
+				Logger.debug('Gemini', 'Using generativelanguage.googleapis.com endpoint (vertexai: false)');
 
 				this.googleGenAI = new GoogleGenAI({
 					apiKey: this.settings.apiKey,
@@ -157,21 +158,21 @@ export class GeminiClient {
 					httpOptions: { headers },
 				});
 
-				console.log('[Gemini] API key client initialized successfully');
+				Logger.debug('Gemini', 'API key client initialized successfully');
 			}
 
 			try {
 				await this.memoryManager.loadMemories();
-				console.log(`[Gemini] Loaded ${this.memoryManager.getMemoryCount()} memories`);
+				Logger.debug('Gemini', `Loaded ${this.memoryManager.getMemoryCount()} memories`);
 			} catch (error) {
-				console.error('[Gemini] Failed to load memories:', error);
+				Logger.error('Gemini', 'Failed to load memories:', error);
 			}
 
 			if (this.settings.enableFileTools) {
 				this.initializeTools();
 			}
 
-			console.log('[Gemini] Client initialized successfully');
+			Logger.debug('Gemini', 'Client initialized successfully');
 			
 			if (originalGcpProject !== undefined) process.env.GOOGLE_CLOUD_PROJECT = originalGcpProject;
 			if (originalGcpLocation !== undefined) process.env.GOOGLE_CLOUD_LOCATION = originalGcpLocation;
@@ -179,7 +180,7 @@ export class GeminiClient {
 			if (originalGcpCredentials !== undefined) process.env.GOOGLE_APPLICATION_CREDENTIALS = originalGcpCredentials;
 
 		} catch (error) {
-			console.error('[Gemini] Failed to initialize:', error);
+			Logger.error('Gemini', 'Failed to initialize:', error);
 			if (originalGcpProject !== undefined) process.env.GOOGLE_CLOUD_PROJECT = originalGcpProject;
 			if (originalGcpLocation !== undefined) process.env.GOOGLE_CLOUD_LOCATION = originalGcpLocation;
 			if (originalUseVertexAI !== undefined) process.env.GOOGLE_GENAI_USE_VERTEXAI = originalUseVertexAI;
@@ -667,7 +668,7 @@ export class GeminiClient {
 
 	private async executeTool(name: string, args: Record<string, any>): Promise<string> {
 		try {
-			console.log(`Executing tool: ${name}`, args);
+			Logger.info('Tools', `Executing tool: ${name}`, args);
 
 			switch (name) {
 				case 'read_file':
@@ -683,7 +684,7 @@ export class GeminiClient {
 			case 'write_file': {
 				const sanitizedPath = this.sanitizeFilePath(args.file_path as string);
 				if (sanitizedPath !== args.file_path) {
-					console.log(`[WriteFile] Sanitized path: "${args.file_path}" → "${sanitizedPath}"`);
+					Logger.debug('WriteFile', `Sanitized path: "${args.file_path}" → "${sanitizedPath}"`);
 				}
 				await this.vaultAdapter.writeFile(sanitizedPath, args.content as string);
 				return `File written successfully: ${sanitizedPath}${sanitizedPath !== args.file_path ? ` (sanitized from: ${args.file_path})` : ''}`;
@@ -773,7 +774,7 @@ export class GeminiClient {
 			}
 		} catch (error) {
 			const errorMsg = `Error executing ${name}: ${error.message}`;
-			console.error(errorMsg);
+			Logger.error('Error', errorMsg);
 			return errorMsg;
 		}
 	}
@@ -795,13 +796,13 @@ export class GeminiClient {
 		}
 
 		const url = urls[0];
-		console.log(`[WebFetch] Processing prompt: "${prompt.substring(0, 100)}..."`);
-		console.log(`[WebFetch] Extracted URL: ${url}`);
+		Logger.debug('WebFetch', `Processing prompt: "${prompt.substring(0, 100)}..."`);
+		Logger.debug('WebFetch', `Extracted URL: ${url}`);
 
 		let fetchUrl = url;
 		if (url.includes('github.com') && url.includes('/blob/')) {
 			fetchUrl = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
-			console.log(`[WebFetch] Converted GitHub URL: ${fetchUrl}`);
+			Logger.debug('WebFetch', `Converted GitHub URL: ${fetchUrl}`);
 		}
 
 		// Follow redirects with a maximum limit to prevent infinite loops
@@ -815,7 +816,7 @@ export class GeminiClient {
 			throw new Error('Too many redirects (max 5)');
 		}
 
-		console.log(`[WebFetch] Fetching: ${url} (${maxRedirects} redirects remaining)`);
+		Logger.debug('WebFetch', `Fetching: ${url} (${maxRedirects} redirects remaining)`);
 		
 		const https = require('https');
 		const http = require('http');
@@ -860,7 +861,7 @@ export class GeminiClient {
 		if (response.statusCode >= 300 && response.statusCode < 400) {
 			const location = response.headers.location;
 			if (location) {
-				console.log(`[WebFetch] Following redirect ${response.statusCode} to: ${location}`);
+				Logger.debug('WebFetch', `Following redirect ${response.statusCode} to: ${location}`);
 				
 				// Handle relative redirects
 				const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
@@ -908,7 +909,7 @@ export class GeminiClient {
 				content = content.substring(0, MAX_CONTENT_LENGTH) + '\n... (content truncated due to size)';
 			}
 
-			console.log(`[WebFetch] Success: ${content.length} characters`);
+			Logger.debug('WebFetch', `Success: ${content.length} characters`);
 			
 			// Include redirect information if the final URL differs from the original
 			const urlInfo = response.finalUrl !== originalUrl 
@@ -919,7 +920,7 @@ export class GeminiClient {
 
 		} catch (error: any) {
 			const errorMessage = `Fetch failed: ${error.message}`;
-			console.error('[WebFetch] Error:', errorMessage, error);
+			Logger.error('WebFetch', 'Error:', errorMessage, error);
 			throw new Error(errorMessage);
 		}
 	}
@@ -932,7 +933,7 @@ export class GeminiClient {
 		}
 
 		try {
-			console.log('[GoogleSearch] Executing search for:', query);
+			Logger.debug('GoogleSearch', 'Executing search for:', query);
 
 			const searchContent: Content = {
 				role: 'user',
@@ -990,12 +991,12 @@ export class GeminiClient {
 				formattedResponse += '\n\nSources:\n' + sourcesList.join('\n');
 			}
 
-			console.log(`[GoogleSearch] Success: ${responseText.length} chars, ${sources.length} sources`);
+			Logger.debug('GoogleSearch', `Success: ${responseText.length} chars, ${sources.length} sources`);
 			return formattedResponse;
 
 		} catch (error: any) {
 			const errorMessage = `Google search failed: ${error.message}`;
-			console.error('[GoogleSearch] Error:', errorMessage, error);
+			Logger.error('GoogleSearch', 'Error:', errorMessage, error);
 			throw new Error(errorMessage);
 		}
 	}
@@ -1010,14 +1011,14 @@ export class GeminiClient {
 			throw new Error('paths parameter is required and must be a non-empty array');
 		}
 
-		console.log('[ReadManyFiles] Processing paths:', paths);
-		console.log('[ReadManyFiles] Include patterns:', include);
-		console.log('[ReadManyFiles] Exclude patterns:', exclude);
-		console.log('[ReadManyFiles] Use default excludes:', useDefaultExcludes);
+		Logger.debug('ReadManyFiles', 'Processing paths:', paths);
+		Logger.debug('ReadManyFiles', 'Include patterns:', include);
+		Logger.debug('ReadManyFiles', 'Exclude patterns:', exclude);
+		Logger.debug('ReadManyFiles', 'Use default excludes:', useDefaultExcludes);
 
 		try {
 			const vaultFiles = this.vaultAdapter.vault.getFiles();
-			console.log('[ReadManyFiles] Total vault files:', vaultFiles.length);
+			Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
 
 		const defaultExcludes = [
 			'node_modules/**',
@@ -1088,7 +1089,7 @@ export class GeminiClient {
 				return !isExcluded;
 			});
 
-			console.log('[ReadManyFiles] Matching files found:', matchingFiles.length);
+			Logger.debug('ReadManyFiles', 'Matching files found:', matchingFiles.length);
 
 			if (matchingFiles.length === 0) {
 				return 'No files found matching the specified patterns.';
@@ -1102,13 +1103,13 @@ export class GeminiClient {
 
 			for (const file of matchingFiles) {
 				try {
-					console.log('[ReadManyFiles] Reading file:', file.path);
+					Logger.debug('ReadManyFiles', 'Reading file:', file.path);
 					const content = await this.vaultAdapter.vault.read(file);
 					
 					results.push(`--- ${file.path} ---\n\n${content}\n\n`);
 					processedFiles.push(file.path);
 				} catch (error) {
-					console.warn('[ReadManyFiles] Failed to read file:', file.path, error);
+					Logger.warn('ReadManyFiles', 'Failed to read file:', file.path, error);
 					skippedFiles.push({
 						path: file.path,
 						reason: `Read error: ${error.message}`
@@ -1140,7 +1141,7 @@ export class GeminiClient {
 
 		} catch (error: any) {
 			const errorMessage = `Error during read_many_files operation: ${error.message}`;
-			console.error(errorMessage, error);
+			Logger.error('Error', errorMessage, error);
 			throw new Error(errorMessage);
 		}
 	}
@@ -1154,17 +1155,17 @@ export class GeminiClient {
 		}
 
 		try {
-			console.log('[SaveMemory] Saving memory:', fact);
+			Logger.debug('SaveMemory', 'Saving memory:', fact);
 			
 			const memory = await this.memoryManager.addMemory(fact, category);
 			
 			const successMessage = `Okay, I've remembered that: "${fact}"`;
-			console.log('[SaveMemory] Success:', memory.id);
+			Logger.debug('SaveMemory', 'Success:', memory.id);
 			
 			return successMessage;
 		} catch (error: any) {
 			const errorMessage = `Failed to save memory: ${error.message}`;
-			console.error('[SaveMemory] Error:', errorMessage, error);
+			Logger.error('SaveMemory', 'Error:', errorMessage, error);
 			throw new Error(errorMessage);
 		}
 	}
@@ -1177,7 +1178,7 @@ export class GeminiClient {
 		}
 
 		try {
-			console.log('[DeleteMemory] Searching for memories to delete:', factToDelete);
+			Logger.debug('DeleteMemory', 'Searching for memories to delete:', factToDelete);
 			
 			const allMemories = this.memoryManager.getMemories();
 			const searchTerm = factToDelete.toLowerCase().trim();
@@ -1194,7 +1195,7 @@ export class GeminiClient {
 				const deleted = await this.memoryManager.deleteMemory(memory.id);
 				if (deleted) {
 					deletedCount++;
-					console.log('[DeleteMemory] Deleted:', memory.fact);
+					Logger.debug('DeleteMemory', 'Deleted:', memory.fact);
 				}
 			}
 
@@ -1206,7 +1207,7 @@ export class GeminiClient {
 			}
 		} catch (error: any) {
 			const errorMessage = `Failed to delete memory: ${error.message}`;
-			console.error('[DeleteMemory] Error:', errorMessage, error);
+			Logger.error('DeleteMemory', 'Error:', errorMessage, error);
 			throw new Error(errorMessage);
 		}
 	}
@@ -1221,32 +1222,32 @@ export class GeminiClient {
 	}
 
 	async *sendMessage(userMessage: string): AsyncGenerator<StreamChunk> {
-		console.log('═══════════════════════════════════════════════════════════════');
-		console.log('[Gemini] 🚀 sendMessage called');
-		console.log('[Gemini] User message:', userMessage);
-		console.log('═══════════════════════════════════════════════════════════════');
+		Logger.separator('Gemini');
+		Logger.debug('Gemini', '🚀 sendMessage called');
+		Logger.debug('Gemini', 'User message:', userMessage);
+		Logger.separator('Gemini');
 
 		// Auto-reinitialize if client is not available (fixes inactivity timeout)
 		if (!this.isInitialized()) {
-			console.log('[Gemini] Client not initialized, auto-reinitializing...');
+			Logger.debug('Gemini', 'Client not initialized, auto-reinitializing...');
 			try {
 				await this.initialize();
-				console.log('[Gemini] Auto-reinitialization successful');
+				Logger.debug('Gemini', 'Auto-reinitialization successful');
 			} catch (error) {
-				console.error('[Gemini] Auto-reinitialization failed:', error);
+				Logger.error('Gemini', 'Auto-reinitialization failed:', error);
 				throw new Error('Failed to initialize Gemini client: ' + (error as Error).message);
 			}
 		}
 
 		const usingDirectAPI = this.settings.useOAuth && this.directAPIClient;
-		console.log('[Gemini] Using:', usingDirectAPI ? 'Direct API (OAuth)' : 'Google SDK (API Key)');
-		console.log('[Gemini] Building request...');
+		Logger.debug('Gemini', 'Using:', usingDirectAPI ? 'Direct API (OAuth)' : 'Google SDK (API Key)');
+		Logger.debug('Gemini', 'Building request...');
 
 		const systemPrompt = this.buildSystemPrompt();
-		console.log('[Gemini] System prompt length:', systemPrompt.length);
-		console.log('[Gemini] System prompt preview:', systemPrompt.substring(0, 200) + '...');
+		Logger.debug('Gemini', 'System prompt length:', systemPrompt.length);
+		Logger.debug('Gemini', 'System prompt preview:', systemPrompt.substring(0, 200) + '...');
 
-		console.log('[Gemini] Conversation history length:', this.history.length, 'messages');
+		Logger.debug('Gemini', 'Conversation history length:', this.history.length, 'messages');
 
 		const contents: Content[] = [];
 		
@@ -1266,27 +1267,27 @@ export class GeminiClient {
 
 		const effectiveModel = getEffectiveModel(this.settings.fallbackMode, this.settings.model);
 		
-		console.log('[Gemini] Requested model:', this.settings.model);
-		console.log('[Gemini] Fallback mode:', this.settings.fallbackMode);
-		console.log('[Gemini] Effective model:', effectiveModel);
-		console.log('[Gemini] Tools enabled:', this.tools.length > 0);
-		console.log('[Gemini] Total contents in request:', contents.length);
+		Logger.debug('Gemini', 'Requested model:', this.settings.model);
+		Logger.debug('Gemini', 'Fallback mode:', this.settings.fallbackMode);
+		Logger.debug('Gemini', 'Effective model:', effectiveModel);
+		Logger.debug('Gemini', 'Tools enabled:', this.tools.length > 0);
+		Logger.debug('Gemini', 'Total contents in request:', contents.length);
 
-		console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-		console.log('[Gemini] 📤 REQUEST DETAILS:');
-		console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-		console.log('[Gemini] Endpoint: generativelanguage.googleapis.com');
-		console.log('[Gemini] Model:', effectiveModel);
-		console.log('[Gemini] Temperature:', this.settings.temperature);
-		console.log('[Gemini] Max tokens:', this.settings.maxTokens);
-		console.log('[Gemini] Auth method:', usingDirectAPI ? 'OAuth Bearer token (Direct API)' : 'API Key (SDK)');
-		console.log('[Gemini] Tools count:', this.tools[0]?.functionDeclarations?.length || 0);
+		Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('Gemini', '📤 REQUEST DETAILS:');
+		Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('Gemini', 'Endpoint: generativelanguage.googleapis.com');
+		Logger.debug('Gemini', 'Model:', effectiveModel);
+		Logger.debug('Gemini', 'Temperature:', this.settings.temperature);
+		Logger.debug('Gemini', 'Max tokens:', this.settings.maxTokens);
+		Logger.debug('Gemini', 'Auth method:', usingDirectAPI ? 'OAuth Bearer token (Direct API)' : 'API Key (SDK)');
+		Logger.debug('Gemini', 'Tools count:', this.tools[0]?.functionDeclarations?.length || 0);
 
 		let accumulatedText = '';
 		let currentToolCalls: ToolCall[] = [];
 
 		try {
-			console.log('[Gemini] Request prepared, sending...');
+			Logger.debug('Gemini', 'Request prepared, sending...');
 
 			let stream;
 			if (usingDirectAPI) {
@@ -1315,11 +1316,11 @@ export class GeminiClient {
 						}
 					};
 					
-					// 🔍 DEBUG: Log full tool structure
-					console.log('[DEBUG] 🛠️  Tools in config:');
-					console.log(JSON.stringify(this.tools, null, 2));
-					console.log('[DEBUG] Tool count:', this.tools[0]?.functionDeclarations?.length);
-					console.log('[DEBUG] First tool:', this.tools[0]?.functionDeclarations?.[0]?.name);
+				// 🔍 DEBUG: Log full tool structure
+				Logger.debug('DEBUG', '🛠️  Tools in config:');
+				Logger.debug('DEBUG', JSON.stringify(this.tools, null, 2));
+				Logger.debug('DEBUG', 'Tool count:', this.tools[0]?.functionDeclarations?.length);
+				Logger.debug('DEBUG', 'First tool:', this.tools[0]?.functionDeclarations?.[0]?.name);
 				}
 				
 				const params: any = {
@@ -1329,36 +1330,36 @@ export class GeminiClient {
 				};
 				
 				// 🔍 DEBUG: Log full request params
-				console.log('[DEBUG] 📤 Full SDK request params:');
-				console.log('[DEBUG] Model:', params.model);
-				console.log('[DEBUG] Config has tools:', !!params.config?.tools);
-				console.log('[DEBUG] Config has toolConfig:', !!params.config?.toolConfig);
-				console.log('[DEBUG] Contents count:', params.contents?.length);
+				Logger.debug('DEBUG', '📤 Full SDK request params:');
+				Logger.debug('DEBUG', 'Model:', params.model);
+				Logger.debug('DEBUG', 'Config has tools:', !!params.config?.tools);
+				Logger.debug('DEBUG', 'Config has toolConfig:', !!params.config?.toolConfig);
+				Logger.debug('DEBUG', 'Contents count:', params.contents?.length);
 				
 				stream = await this.googleGenAI.models.generateContentStream(params);
 			} else {
 				throw new Error('No API client available');
 			}
 
-			console.log('[Gemini] ✅ Stream started successfully');
-			console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			console.log('[Gemini] 📥 PROCESSING RESPONSE:');
-			console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('Gemini', '✅ Stream started successfully');
+			Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('Gemini', '📥 PROCESSING RESPONSE:');
+			Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
 			for await (const chunk of stream) {
-				console.log('[Gemini] Received chunk:', chunk);
+				Logger.debug('Gemini', 'Received chunk:', chunk);
 
 				const candidateContent = chunk.candidates?.[0]?.content;
 				if (!candidateContent) continue;
 
-				console.log('[Gemini] Candidate content:', candidateContent);
+				Logger.debug('Gemini', 'Candidate content:', candidateContent);
 				const parts = candidateContent.parts;
-				console.log('[Gemini] Parts count:', parts?.length || 0);
+				Logger.debug('Gemini', 'Parts count:', parts?.length || 0);
 
 				// 🔍 DEBUG: Inspect each part in detail
 				for (let i = 0; i < (parts?.length || 0); i++) {
 					const part = parts[i];
-					console.log(`[DEBUG] 🔍 Part ${i}:`, {
+					Logger.debug('DEBUG', `🔍 Part ${i}:`, {
 						hasText: !!part.text,
 						hasFunctionCall: !!part.functionCall,
 						hasFunctionResponse: !!part.functionResponse,
@@ -1366,10 +1367,10 @@ export class GeminiClient {
 						keys: Object.keys(part)
 					});
 					if (part.text) {
-						console.log(`[DEBUG]   Text preview: "${part.text.substring(0, 100)}"`);
+						Logger.debug('DEBUG', `Text preview: "${part.text.substring(0, 100)}"`);
 					}
 					if (part.functionCall) {
-						console.log(`[DEBUG]   Function call name: ${part.functionCall.name}`);
+						Logger.debug('DEBUG', `Function call name: ${part.functionCall.name}`);
 					}
 				}
 
@@ -1383,9 +1384,9 @@ export class GeminiClient {
 					}
 
 					if (part.functionCall) {
-						console.log('[Gemini] 🔧 TOOL CALL:');
-						console.log('[Gemini] Tool name:', part.functionCall.name);
-						console.log('[Gemini] Tool args:', JSON.stringify(part.functionCall.args, null, 2));
+						Logger.debug('Gemini', '🔧 TOOL CALL:');
+						Logger.debug('Gemini', 'Tool name:', part.functionCall.name);
+						Logger.debug('Gemini', 'Tool args:', JSON.stringify(part.functionCall.args, null, 2));
 
 						const toolCall: ToolCall = {
 							name: part.functionCall.name,
@@ -1398,13 +1399,13 @@ export class GeminiClient {
 				}
 			}
 
-			console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			console.log('[Gemini] ✅ RESPONSE COMPLETE:');
-			console.log('[Gemini] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			console.log('[Gemini] Total text length:', accumulatedText.length);
-			console.log('[Gemini] Tool calls:', currentToolCalls.length);
-			console.log('[Gemini] History length (before update):', this.history.length);
-			console.log('[Gemini] Full response preview:', accumulatedText.substring(0, 200));
+			Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('Gemini', '✅ RESPONSE COMPLETE:');
+			Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('Gemini', 'Total text length:', accumulatedText.length);
+			Logger.debug('Gemini', 'Tool calls:', currentToolCalls.length);
+			Logger.debug('Gemini', 'History length (before update):', this.history.length);
+			Logger.debug('Gemini', 'Full response preview:', accumulatedText.substring(0, 200));
 
 			// Add user message to history ONCE (following gemini-cli pattern - line 257 in geminiChat.ts)
 			this.history.push({
@@ -1438,8 +1439,8 @@ export class GeminiClient {
 				});
 			}
 
-			console.log('[Gemini] Added user message and model response to history');
-			console.log('[Gemini] History length (after update):', this.history.length);
+			Logger.debug('Gemini', 'Added user message and model response to history');
+			Logger.debug('Gemini', 'History length (after update):', this.history.length);
 
 			if (currentToolCalls.length > 0) {
 				yield {
@@ -1449,54 +1450,54 @@ export class GeminiClient {
 				};
 
 				for (let turn = 1; turn <= 10; turn++) {
-					console.log(`[Gemini] 🔄 Turn ${turn}: Tool responses present, making follow-up call...`);
+					Logger.debug('Gemini', `🔄 Turn ${turn}: Tool responses present, making follow-up call...`);
 
 					const toolResponses: Array<{name: string; response: any}> = [];
 					
 					for (const toolCall of currentToolCalls) {
-						console.log('[Gemini] 🔧 Follow-up tool call:', toolCall.name);
+						Logger.debug('Gemini', '🔧 Follow-up tool call:', toolCall.name);
 
 						// Check tool permission
 						const toolPermission = this.settings.toolPermissions[toolCall.name as keyof typeof this.settings.toolPermissions];
 						
-						console.log('[Gemini] Tool permission:', toolPermission);
+						Logger.debug('Gemini', 'Tool permission:', toolPermission);
 
 						let approved: boolean;
 						
 						// Apply tool permission
 						if (toolPermission === 'always') {
-							console.log('[Gemini] ✅ Tool always allowed by permission');
+							Logger.debug('Gemini', '✅ Tool always allowed by permission');
 							approved = true;
 						} else if (toolPermission === 'never') {
-							console.log('[Gemini] ❌ Tool never allowed by permission');
+							Logger.debug('Gemini', '❌ Tool never allowed by permission');
 							approved = false;
 						} else {
 							// Permission is 'ask' - request user approval
 							if (this.toolApprovalHandler) {
-								console.log('[Gemini] Requesting user approval for tool:', toolCall.name);
+								Logger.debug('Gemini', 'Requesting user approval for tool:', toolCall.name);
 								approved = await this.toolApprovalHandler(toolCall.name, toolCall.args);
 							} else {
-								console.log('[Gemini] ⚠️  No approval handler, rejecting tool');
+								Logger.debug('Gemini', '⚠️  No approval handler, rejecting tool');
 								approved = false;
 							}
 						}
 
 						if (approved) {
-							console.log('[Gemini] ✅ Executing tool:', toolCall.name);
+							Logger.debug('Gemini', '✅ Executing tool:', toolCall.name);
 
 							toolCall.status = 'approved';
 							const toolResult = await this.executeTool(toolCall.name, toolCall.args);
 							toolCall.status = 'executed';
 							toolCall.result = toolResult;
 
-							console.log('[Gemini] Tool result:', toolResult.substring(0, 200) + (toolResult.length > 200 ? '...' : ''));
+							Logger.debug('Gemini', 'Tool result:', toolResult.substring(0, 200) + (toolResult.length > 200 ? '...' : ''));
 
 							toolResponses.push({
 								name: toolCall.name,
 								response: { result: toolResult }
 							});
 						} else {
-							console.log('[Gemini] Tool rejected by user');
+							Logger.debug('Gemini', 'Tool rejected by user');
 							toolCall.status = 'rejected';
 							toolCall.error = 'User rejected tool execution';
 
@@ -1517,8 +1518,8 @@ export class GeminiClient {
 						}))
 					});
 
-					console.log('[Gemini] Added tool responses to history as user message');
-					console.log('[Gemini] 🔍 History before follow-up (last 2 items):', JSON.stringify(this.history.slice(-2), null, 2));
+					Logger.debug('Gemini', 'Added tool responses to history as user message');
+					Logger.debug('Gemini', '🔍 History before follow-up (last 2 items):', JSON.stringify(this.history.slice(-2), null, 2));
 
 					const clonedHistory = this.history.map(content => ({
 						role: content.role,
@@ -1540,7 +1541,7 @@ export class GeminiClient {
 						}) || []
 					}));
 
-					console.log('[Gemini] 📥 Processing follow-up response...');
+					Logger.debug('Gemini', '📥 Processing follow-up response...');
 
 					let followUpText = '';
 					let followUpToolCalls: ToolCall[] = [];
@@ -1607,9 +1608,9 @@ export class GeminiClient {
 						}
 					}
 
-					console.log('[Gemini] ✅ Follow-up turn complete');
-					console.log('[Gemini] Follow-up text length:', followUpText.length);
-					console.log('[Gemini] Follow-up parts:', followUpToolCalls.length);
+					Logger.debug('Gemini', '✅ Follow-up turn complete');
+					Logger.debug('Gemini', 'Follow-up text length:', followUpText.length);
+					Logger.debug('Gemini', 'Follow-up parts:', followUpToolCalls.length);
 
 					// Add follow-up model response to history (text + any new tool calls)
 					const followUpParts: Part[] = [];
@@ -1630,11 +1631,11 @@ export class GeminiClient {
 							role: 'model',
 							parts: followUpParts
 						});
-						console.log('[Gemini] Added follow-up model response to history');
+						Logger.debug('Gemini', 'Added follow-up model response to history');
 					}
 
 					if (followUpToolCalls.length === 0) {
-						console.log('[Gemini] No more tool calls, ending loop');
+						Logger.debug('Gemini', 'No more tool calls, ending loop');
 						break;
 					}
 
@@ -1647,11 +1648,11 @@ export class GeminiClient {
 				done: true
 			};
 
-			console.log('[Gemini] Final conversation history has', this.history.length, 'items');
-			console.log('═══════════════════════════════════════════════════════════════');
+		Logger.debug('Gemini', 'Final conversation history has', this.history.length, 'items');
+		Logger.separator('Gemini');
 
 		} catch (error: any) {
-			console.error('[Gemini] Error in sendMessage:', error);
+			Logger.error('Gemini', 'Error in sendMessage:', error);
 			
 			yield {
 				text: '',

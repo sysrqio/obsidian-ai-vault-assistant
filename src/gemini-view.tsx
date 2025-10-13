@@ -3,6 +3,7 @@ import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { ChatInterface } from './ui/chat-interface';
 import type { GeminiClient, Message } from './gemini-client';
+import { Logger } from './utils/logger';
 import type GeminiPlugin from './main';
 import { ToolConfirmationModal, ToolConfirmationData } from './tool-confirmation-modal';
 
@@ -42,7 +43,7 @@ export class GeminiView extends ItemView {
 		try {
 			await this.geminiClient.initialize();
 		} catch (error) {
-			console.error('Failed to initialize Gemini client:', error);
+			Logger.error('Error', 'Failed to initialize Gemini client:', error);
 		}
 
 		this.root = ReactDOM.createRoot(container);
@@ -79,7 +80,7 @@ export class GeminiView extends ItemView {
 	}
 
 	private async handleSendMessage(message: string): Promise<void> {
-		console.log('[View] Sending message:', message);
+		Logger.debug('View', 'Sending message:', message);
 
 		// Check for special commands
 		if (message.trim() === '/memories') {
@@ -137,7 +138,7 @@ export class GeminiView extends ItemView {
 			this.render();
 
 		} catch (error: any) {
-			console.error('[View] Error sending message:', error);
+			Logger.error('View', 'Error sending message:', error);
 			
 			const errorMessage: Message = {
 				id: 'error-' + Date.now(),
@@ -162,10 +163,10 @@ export class GeminiView extends ItemView {
 		if (permission) {
 			switch (permission) {
 				case 'always':
-					console.log('[View] ' + toolName + ' always allowed');
+					Logger.debug('View', '' + toolName + ' always allowed');
 					return true;
 				case 'never':
-					console.log('[View] ' + toolName + ' never allowed');
+					Logger.debug('View', '' + toolName + ' never allowed');
 					return false;
 				case 'ask':
 				default:
@@ -180,16 +181,16 @@ export class GeminiView extends ItemView {
 				description: this.getToolDescription(toolName)
 			};
 
-			console.log('[View] Creating tool confirmation modal for:', toolName, 'with args:', args);
+			Logger.debug('View', 'Creating tool confirmation modal for:', toolName, 'with args:', args);
 
 			const modal = new ToolConfirmationModal(
 				this.app,
 				data,
 				async (rememberChoice?: 'always' | 'never') => {
-					console.log('[View] Tool approved:', toolName);
+					Logger.debug('View', 'Tool approved:', toolName);
 					
 					if (rememberChoice && settings.toolPermissions[toolName as keyof typeof settings.toolPermissions] !== undefined) {
-						console.log('[View] Saving ' + toolName + ' preference:', rememberChoice);
+						Logger.debug('View', 'Saving ' + toolName + ' preference:', rememberChoice);
 						settings.toolPermissions[toolName as keyof typeof settings.toolPermissions] = rememberChoice;
 						await this.plugin.saveSettings();
 					}
@@ -199,12 +200,12 @@ export class GeminiView extends ItemView {
 					}
 				},
 				() => {
-					console.log('[View] Tool rejected:', toolName);
+					Logger.debug('View', 'Tool rejected:', toolName);
 					resolve(false);
 				}
 			);
 
-			console.log('[View] Opening modal...');
+			Logger.debug('View', 'Opening modal...');
 			modal.open();
 		});
 	}
@@ -225,7 +226,7 @@ export class GeminiView extends ItemView {
 	}
 
 	private handleShowTools(): void {
-		console.log('[View] Showing tools list');
+		Logger.debug('View', 'Showing tools list');
 		
 		const toolsList = '# 🔧 Available Tools (26 Total)\n\n' +
 		'## 📁 **File Operations** (5)\n' +
@@ -300,7 +301,7 @@ export class GeminiView extends ItemView {
 	}
 
 	private handleShowMemories(): void {
-		console.log('[View] Showing memories');
+		Logger.debug('View', 'Showing memories');
 		
 		const memoryManager = this.geminiClient.getMemoryManager();
 		const memories = memoryManager.getMemories();
@@ -376,7 +377,7 @@ export class GeminiView extends ItemView {
 	}
 
 	private handleClearChat(): void {
-		console.log('[View] Clearing chat');
+		Logger.debug('View', 'Clearing chat');
 		this.messages = [];
 		this.geminiClient.clearHistory();
 		this.render();

@@ -2,6 +2,8 @@
  * Model selection utilities following gemini-cli pattern
  */
 
+import { Logger } from './logger';
+
 /**
  * Get effective model based on fallback mode
  * Following gemini-cli's model selection logic
@@ -9,7 +11,7 @@
 export function getEffectiveModel(fallbackMode: boolean, requestedModel: string): string {
 	if (fallbackMode) {
 		// When fallback is enabled, always use Flash
-		console.log(`[Model] Fallback mode enabled, using gemini-2.5-flash instead of ${requestedModel}`);
+		Logger.debug('Model', `Fallback mode enabled, using gemini-2.5-flash instead of ${requestedModel}`);
 		return 'gemini-2.5-flash';
 	}
 	

@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 import { OAuth2Client } from 'google-auth-library';
 import * as http from 'http';
 import { URL } from 'url';
+import { Logger } from './utils/logger';
 
 /**
  * OAuth handler for Gemini API authentication (Desktop App Flow)
@@ -39,9 +40,9 @@ export class OAuthHandler {
 			// OAuth2Client will be created with dynamic redirect URI when starting flow
 			this.oauth2Client = null;
 			
-			console.log('[OAuth] Initialized with Client ID:', this.clientId.substring(0, 20) + '...');
+			Logger.debug('OAuth', ' Initialized with Client ID:', this.clientId.substring(0, 20) + '...');
 		} catch (error) {
-			console.error('[OAuth] Failed to initialize:', error);
+			Logger.error('OAuth', ' Failed to initialize:', error);
 			throw new Error('Failed to load OAuth credentials: ' + (error as Error).message);
 		}
 	}
@@ -58,7 +59,7 @@ export class OAuthHandler {
 			throw new Error('OAuth client not initialized. Call initialize() first.');
 		}
 		
-		console.log('[OAuth] Starting OAuth flow...');
+		Logger.debug('OAuth', ' Starting OAuth flow...');
 		
 		// Start local server and get the actual port it's running on
 		const { server, port } = await this.startLocalServer();
@@ -79,8 +80,8 @@ export class OAuthHandler {
 			prompt: 'consent' // Force consent to ensure refresh token
 		});
 		
-		console.log('[OAuth] Authorization URL generated');
-		console.log('[OAuth] Redirect URI:', redirectUri);
+		Logger.debug('OAuth', ' Authorization URL generated');
+		Logger.debug('OAuth', ' Redirect URI:', redirectUri);
 		
 		// Open browser
 		this.openBrowser(authUrl);
@@ -91,7 +92,7 @@ export class OAuthHandler {
 		// Close server
 		server.close();
 		
-		console.log('[OAuth] Authorization code received, exchanging for tokens...');
+		Logger.debug('OAuth', ' Authorization code received, exchanging for tokens...');
 		
 		// Exchange code for tokens
 		const { tokens } = await this.oauth2Client.getToken(code);
@@ -100,7 +101,7 @@ export class OAuthHandler {
 			throw new Error('Failed to obtain tokens from OAuth flow');
 		}
 		
-		console.log('[OAuth] Tokens received successfully');
+		Logger.debug('OAuth', ' Tokens received successfully');
 		
 		return {
 			access_token: tokens.access_token,
@@ -147,7 +148,7 @@ export class OAuthHandler {
 					this.authCode = code;
 					res.writeHead(200, { 'Content-Type': 'text/html' });
 					res.end(this.getSuccessHtml());
-					console.log('[OAuth] Authorization code captured');
+					Logger.debug('OAuth', ' Authorization code captured');
 				}
 			});
 			
@@ -170,7 +171,7 @@ export class OAuthHandler {
 						server.close();
 						setTimeout(tryListen, 100);
 					} else {
-						console.error('[OAuth] Server error:', err);
+						Logger.error('OAuth', ' Server error:', err);
 						reject(err);
 					}
 				});
@@ -205,7 +206,7 @@ export class OAuthHandler {
 	 * Open browser to authorization URL
 	 */
 	private openBrowser(authUrl: string): void {
-		console.log('[OAuth] Opening browser for authentication...');
+		Logger.debug('OAuth', ' Opening browser for authentication...');
 		new Notice('Opening browser for Google authentication...');
 		
 		// Use Electron's shell to open URL
@@ -378,7 +379,7 @@ export class OAuthHandler {
 			throw new Error('OAuth client not initialized. Call initialize() first.');
 		}
 		
-		console.log('[OAuth] Refreshing access token...');
+		Logger.debug('OAuth', ' Refreshing access token...');
 		
 		// Create temporary OAuth2Client for token refresh
 		const redirectUri = `http://localhost:${OAuthHandler.REDIRECT_PORTS[0]}/oauth2callback`;
@@ -398,7 +399,7 @@ export class OAuthHandler {
 			throw new Error('Failed to refresh access token');
 		}
 		
-		console.log('[OAuth] Access token refreshed successfully');
+		Logger.debug('OAuth', ' Access token refreshed successfully');
 		
 		return {
 			access_token: credentials.access_token,

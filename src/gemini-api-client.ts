@@ -36,7 +36,8 @@ export class DirectGeminiAPIClient {
 		if (this.userId) return; // Already fetched
 
 		try {
-			const url = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
+			// Use v2 endpoint to match gemini-cli
+			const url = 'https://www.googleapis.com/oauth2/v2/userinfo';
 			const response = await new Promise<any>((resolve, reject) => {
 				const req = https.request(url, {
 					method: 'GET',
@@ -59,7 +60,11 @@ export class DirectGeminiAPIClient {
 			});
 
 			this.userId = response.id;
-			Logger.debug('DirectAPI', '✅ User ID fetched:', this.userId);
+			Logger.debug('DirectAPI', '✅ User info fetched:');
+			Logger.debug('DirectAPI', '  ID:', this.userId);
+			Logger.debug('DirectAPI', '  Email:', response.email);
+			Logger.debug('DirectAPI', '  Name:', response.name);
+			Logger.debug('DirectAPI', '  Verified:', response.verified_email);
 		} catch (error) {
 			Logger.error('DirectAPI', 'Failed to fetch user info:', error);
 			throw error; // This is required for the API call

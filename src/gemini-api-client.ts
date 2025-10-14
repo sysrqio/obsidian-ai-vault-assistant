@@ -333,14 +333,31 @@ export class DirectGeminiAPIClient {
 			throw new Error('No data lines found in SSE response');
 		}
 		
-		// Parse the last data line (final response)
-		const lastDataLine = dataLines[dataLines.length - 1];
-		const jsonStr = lastDataLine.substring(5).trim(); // Remove "data:" prefix
-		const parsed = JSON.parse(jsonStr);
+		Logger.debug('DirectAPI', `Found ${dataLines.length} SSE data lines`);
 		
-		// Extract the actual response from the wrapper
-		// The API returns: { "response": { "candidates": [...], ... } }
-		const response = parsed.response || parsed;
+		// Combine all chunks (each chunk has partial text)
+		let combinedText = '';
+		let finalResponse: any = null;
+		
+		for (const dataLine of dataLines) {
+			const jsonStr = dataLine.substring(5).trim(); // Remove "data:" prefix
+			const parsed = JSON.parse(jsonStr);
+			const chunk = parsed.response || parsed;
+			
+			// Accumulate text from each chunk
+			const chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || '';
+			combinedText += chunkText;
+			
+			// Keep the last chunk for metadata (usage, finishReason, etc.)
+			finalResponse = chunk;
+		}
+		
+		// Replace the text in the final response with the combined text
+		if (finalResponse && finalResponse.candidates?.[0]?.content?.parts?.[0]) {
+			finalResponse.candidates[0].content.parts[0].text = combinedText;
+		}
+		
+		const response = finalResponse;
 
 		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 		Logger.debug('DirectAPI', '✅ RESPONSE PARSED:');

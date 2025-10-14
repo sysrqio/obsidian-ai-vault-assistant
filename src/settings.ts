@@ -460,6 +460,7 @@ export class GeminiSettingTab extends PluginSettingTab {
 
 	/**
 	 * Test OAuth API connection
+	 * Tests the complete gemini-cli flow: userinfo → loadCodeAssist → generateContent
 	 */
 	async testOAuthAPI(): Promise<void> {
 		if (!this.plugin.settings.oauthAccessToken) {
@@ -468,6 +469,8 @@ export class GeminiSettingTab extends PluginSettingTab {
 		}
 
 		try {
+			Logger.info('OAuth Test', 'Starting OAuth API test...');
+			
 			// DEBUGGING: Inspect the access token to see what scopes it actually has
 			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 			console.log('🔍 OAUTH TOKEN INSPECTION');
@@ -506,22 +509,32 @@ export class GeminiSettingTab extends PluginSettingTab {
 			}
 			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 			
-			// Route through Direct API client so the request matches gemini-cli exactly
-			console.log('🧪 Testing via DirectGeminiAPIClient (gemini-cli format)...');
-			if (!this.plugin.geminiClient || !this.plugin.geminiClient['directAPIClient']) {
-				new Notice('❌ OAuth Direct API client not initialized. Please authenticate first.');
-				return;
-			}
-			const directClient = this.plugin.geminiClient['directAPIClient'];
-			const resp = await directClient.generateContent(
-				'gemini-2.5-flash',
-				[{ role: 'user', parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }] }],
-				'',
-				[],
-				{ temperature: 0.7, maxOutputTokens: 128 }
-			);
-			const text = resp?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
-			new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
+		// Test complete gemini-cli OAuth flow
+		Logger.info('OAuth Test', '🧪 Testing via DirectGeminiAPIClient (gemini-cli format)...');
+		Logger.info('OAuth Test', 'Flow: userinfo → loadCodeAssist → generateContent');
+		
+		if (!this.plugin.geminiClient || !this.plugin.geminiClient['directAPIClient']) {
+			new Notice('❌ OAuth Direct API client not initialized. Please authenticate first.');
+			return;
+		}
+		
+		const directClient = this.plugin.geminiClient['directAPIClient'];
+		
+		// This will automatically call:
+		// 1. fetchUserInfo() - GET /oauth2/v2/userinfo
+		// 2. loadCodeAssist() - POST /v1internal:loadCodeAssist  
+		// 3. streamGenerateContent - POST /v1internal:streamGenerateContent
+		const resp = await directClient.generateContent(
+			'gemini-2.5-flash',
+			[{ role: 'user', parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }] }],
+			'',
+			[],
+			{ temperature: 0.7, maxOutputTokens: 128 }
+		);
+		
+		const text = resp?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
+		Logger.info('OAuth Test', `✅ Test successful! Response: ${text.substring(0, 50)}...`);
+		new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
 		} catch (error) {
 			new Notice(`❌ OAuth API test error: ${(error as Error).message}`);
 		}

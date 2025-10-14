@@ -325,37 +325,41 @@ export class DirectGeminiAPIClient {
 			Logger.debug('DirectAPI', 'Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
 			Logger.debug('DirectAPI', 'Parsing SSE response...');
 
-			// Parse SSE format: multiple "data: {...}" lines
-			const lines = buffer.split('\n');
-			const dataLines = lines.filter(line => line.trim().startsWith('data:'));
-			
-			if (dataLines.length === 0) {
-				throw new Error('No data lines found in SSE response');
-			}
-			
-			// Parse the last data line (final response)
-			const lastDataLine = dataLines[dataLines.length - 1];
-			const jsonStr = lastDataLine.substring(5).trim(); // Remove "data:" prefix
-			const response = JSON.parse(jsonStr);
+		// Parse SSE format: multiple "data: {...}" lines
+		const lines = buffer.split('\n');
+		const dataLines = lines.filter(line => line.trim().startsWith('data:'));
+		
+		if (dataLines.length === 0) {
+			throw new Error('No data lines found in SSE response');
+		}
+		
+		// Parse the last data line (final response)
+		const lastDataLine = dataLines[dataLines.length - 1];
+		const jsonStr = lastDataLine.substring(5).trim(); // Remove "data:" prefix
+		const parsed = JSON.parse(jsonStr);
+		
+		// Extract the actual response from the wrapper
+		// The API returns: { "response": { "candidates": [...], ... } }
+		const response = parsed.response || parsed;
 
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			Logger.debug('DirectAPI', '✅ RESPONSE PARSED:');
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			Logger.debug('DirectAPI', 'Candidates:', response.candidates?.length || 0);
-			Logger.debug('DirectAPI', 'Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
-			response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
-				if (p.text) Logger.debug('DirectAPI', `Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
-				if (p.functionCall) Logger.debug('DirectAPI', `Part ${i}: Function call:`, p.functionCall.name);
-				if (p.functionResponse) Logger.debug('DirectAPI', `Part ${i}: Function response:`, p.functionResponse.name);
-			});
-			Logger.debug('DirectAPI', 'Usage:', response.usageMetadata);
-			Logger.debug('DirectAPI', 'Full response:', JSON.stringify(response, null, 2));
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '✅ RESPONSE PARSED:');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', 'Candidates:', response.candidates?.length || 0);
+		Logger.debug('DirectAPI', 'Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
+		response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
+			if (p.text) Logger.debug('DirectAPI', `Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
+			if (p.functionCall) Logger.debug('DirectAPI', `Part ${i}: Function call:`, p.functionCall.name);
+			if (p.functionResponse) Logger.debug('DirectAPI', `Part ${i}: Function response:`, p.functionResponse.name);
+		});
+		Logger.debug('DirectAPI', 'Usage:', response.usageMetadata);
+		Logger.debug('DirectAPI', 'Full response:', JSON.stringify(response, null, 2));
 
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			Logger.debug('DirectAPI', '✅ RESPONSE COMPLETE');
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			
-			return response;
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '✅ RESPONSE COMPLETE');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		
+		return response;
 
 		} catch (error: any) {
 			Logger.error('DirectAPI', 'Stream error:', error);

@@ -22,20 +22,16 @@ export class OAuthHandler {
 	private clientSecret: string = '';
 	
 	/**
-	 * Initialize OAuth handler with credentials from client_secret.json
+	 * Initialize OAuth handler with credentials from settings
 	 */
-	async initialize(clientSecretPath: string): Promise<void> {
+	async initialize(clientId: string, clientSecret: string): Promise<void> {
 		try {
-			const fs = require('fs');
-			const clientSecretContent = fs.readFileSync(clientSecretPath, 'utf8');
-			const clientSecret = JSON.parse(clientSecretContent);
-			
-			if (clientSecret.installed) {
-				this.clientId = clientSecret.installed.client_id;
-				this.clientSecret = clientSecret.installed.client_secret;
-			} else {
-				throw new Error('Invalid client_secret.json format. Expected "installed" application type.');
+			if (!clientId || !clientSecret) {
+				throw new Error('OAuth Client ID and Client Secret are required. Please configure them in settings.');
 			}
+			
+			this.clientId = clientId;
+			this.clientSecret = clientSecret;
 			
 			// OAuth2Client will be created with dynamic redirect URI when starting flow
 			this.oauth2Client = null;

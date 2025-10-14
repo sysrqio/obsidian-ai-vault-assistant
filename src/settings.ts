@@ -52,6 +52,8 @@ export interface GeminiSettings {
 	apiKey: string;
 	model: string;
 	useOAuth: boolean;
+	oauthClientId?: string;
+	oauthClientSecret?: string;
 	oauthAccessToken?: string;
 	oauthRefreshToken?: string;
 	oauthExpiresAt?: number;
@@ -69,6 +71,8 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	apiKey: '',
 	model: 'gemini-2.5-pro',
 	useOAuth: false,
+	oauthClientId: undefined,
+	oauthClientSecret: undefined,
 	oauthAccessToken: undefined,
 	oauthRefreshToken: undefined,
 	oauthExpiresAt: undefined,
@@ -164,6 +168,41 @@ export class GeminiSettingTab extends PluginSettingTab {
 			}));
 
 	if (this.plugin.settings.useOAuth) {
+		// OAuth credentials info
+		const infoDesc = document.createDocumentFragment();
+		infoDesc.createEl('div', { text: 'Get OAuth credentials from gemini-cli source code:' });
+		const link = infoDesc.createEl('a', { 
+			text: 'https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts',
+			href: 'https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts'
+		});
+		link.setAttr('target', '_blank');
+		infoDesc.createEl('div', { text: 'Look for OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET constants.' });
+		
+		new Setting(containerEl)
+			.setName('OAuth Credentials')
+			.setDesc(infoDesc);
+		
+		new Setting(containerEl)
+			.setName('OAuth Client ID')
+			.setDesc('Client ID from gemini-cli source (starts with 681255809395-...)')
+			.addText(text => text
+				.setPlaceholder('Paste OAUTH_CLIENT_ID from gemini-cli')
+				.setValue(this.plugin.settings.oauthClientId || '')
+				.onChange(async (value) => {
+					this.plugin.settings.oauthClientId = value;
+					await this.plugin.saveSettings();
+				}));
+		
+		new Setting(containerEl)
+			.setName('OAuth Client Secret')
+			.setDesc('Client secret from gemini-cli source (starts with GOCSPX-...)')
+			.addText(text => text
+				.setPlaceholder('Paste OAUTH_CLIENT_SECRET from gemini-cli')
+				.setValue(this.plugin.settings.oauthClientSecret || '')
+				.onChange(async (value) => {
+					this.plugin.settings.oauthClientSecret = value;
+					await this.plugin.saveSettings();
+				}));
 		const status = this.plugin.settings.oauthAccessToken 
 			? '✅ Authenticated' 
 			: '❌ Not authenticated';

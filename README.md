@@ -92,11 +92,16 @@
 2. Enter in plugin settings
 3. Start chatting!
 
-**Option 2: OAuth (Recommended)**
-1. Toggle "Use OAuth" in settings
-2. Click "Authenticate"
-3. Login with your Google account
-4. Tokens are securely stored
+**Option 2: OAuth (Recommended - Like gemini-cli)**
+1. Get OAuth credentials from gemini-cli source:
+   - Visit: https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts
+   - Copy `OAUTH_CLIENT_ID` constant value
+   - Copy `OAUTH_CLIENT_SECRET` constant value
+2. Toggle "Use OAuth" in settings
+3. Paste the Client ID and Client Secret into the settings fields
+4. Click "Authenticate" button
+5. Login with your Google account in the browser
+6. Tokens are automatically saved and refreshed
 
 ### Tool Permissions
 

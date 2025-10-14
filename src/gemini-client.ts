@@ -111,14 +111,18 @@ export class GeminiClient {
 						throw new Error('OAuth token expired and no refresh token available');
 					}
 
-					Logger.debug('Gemini', 'Token expired, refreshing...');
-					
-					// Initialize OAuth handler and refresh token
-					const oauthHandler = new OAuthHandler();
-					const clientSecretPath = `${this.vaultPath}/.obsidian/plugins/gemini-assistant/client_secret.json`;
-					await oauthHandler.initialize(clientSecretPath);
-					
-					const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
+				Logger.debug('Gemini', 'Token expired, refreshing...');
+				
+				// Check if OAuth credentials are configured
+				if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
+					throw new Error('OAuth Client ID and Client Secret not configured. Please configure them in settings.');
+				}
+				
+				// Initialize OAuth handler and refresh token
+				const oauthHandler = new OAuthHandler();
+				await oauthHandler.initialize(this.settings.oauthClientId, this.settings.oauthClientSecret);
+				
+				const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
 
 					this.settings.oauthAccessToken = newTokens.access_token;
 					if (newTokens.refresh_token) {

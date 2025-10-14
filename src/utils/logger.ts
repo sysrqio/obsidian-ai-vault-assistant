@@ -125,7 +125,7 @@ export class Logger {
 	 */
 	static debug(context: string, message: string, ...args: any[]): void {
 		if (this.shouldLog('debug')) {
-			console.log(`[${context}] 🐛 ${message}`, ...args);
+			this.originalConsole.log(`[${context}] 🐛 ${message}`, ...args);
 		}
 	}
 
@@ -134,7 +134,7 @@ export class Logger {
 	 */
 	static info(context: string, message: string, ...args: any[]): void {
 		if (this.shouldLog('info')) {
-			console.log(`[${context}] ℹ️  ${message}`, ...args);
+			this.originalConsole.log(`[${context}] ℹ️  ${message}`, ...args);
 		}
 	}
 
@@ -186,7 +186,7 @@ export class Logger {
 	 */
 	static separator(context: string): void {
 		if (this.shouldLog('debug')) {
-			console.log(`[${context}] ${'═'.repeat(63)}`);
+			this.originalConsole.log(`[${context}] ${'═'.repeat(63)}`);
 		}
 	}
 }

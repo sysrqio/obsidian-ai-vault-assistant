@@ -204,9 +204,8 @@ export class DirectGeminiAPIClient {
 			'x-goog-api-client': 'gl-node/24.9.0'
 		};
 
-		// Generate unique IDs for session and prompt
-		const sessionId = this.generateUUID();
-		const userPromptId = `${this.generateUUID()}########1`;
+	// Generate unique ID for prompt
+	const userPromptId = `${this.generateUUID()}########1`;
 
 		// Wrap the request in gemini-cli format
 		const innerRequest: any = {
@@ -222,17 +221,22 @@ export class DirectGeminiAPIClient {
 			innerRequest.tools = tools;
 		}
 
-		const body: any = {
-			model: model,
-			project: this.projectId,
-			user_prompt_id: userPromptId,
-			request: innerRequest,
-			systemInstruction: systemInstruction ? {
-				role: 'user',
-				parts: [{ text: systemInstruction }]
-			} : undefined,
-			session_id: sessionId
+	const body: any = {
+		model: model,
+		project: this.projectId,
+		user_prompt_id: userPromptId,
+		request: innerRequest
+	};
+	
+	// Add systemInstruction only if provided
+	if (systemInstruction) {
+		body.systemInstruction = {
+			role: 'user',
+			parts: [{ text: systemInstruction }]
 		};
+	}
+	
+	// Note: session_id causes 400 error - API doesn't accept it at top level
 
 		Logger.debug('DirectAPI', '✅ Using correct REST API systemInstruction format (object)');
 		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

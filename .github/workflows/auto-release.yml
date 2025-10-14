@@ -1,0 +1,98 @@
+name: Auto Version and Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  auto-version:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.PIPELINE_GITHUB_TOKEN }}
+    
+    - name: Determine version bump type from PR labels
+      id: bump_type
+      run: |
+        LABELS="${{ toJson(github.event.pull_request.labels.*.name) }}"
+        
+        if echo "$LABELS" | grep -q "major"; then
+          echo "bump=major" >> $GITHUB_OUTPUT
+        elif echo "$LABELS" | grep -q "minor"; then
+          echo "bump=minor" >> $GITHUB_OUTPUT
+        elif echo "$LABELS" | grep -q "patch"; then
+          echo "bump=patch" >> $GITHUB_OUTPUT
+        else
+          # Default to patch
+          echo "bump=patch" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Bump version and create tag
+      id: tag_version
+      uses: anothrNick/github-tag-action@1.67.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN }}
+        WITH_V: false  # Use 0.1.0 instead of v0.1.0
+        DEFAULT_BUMP: ${{ steps.bump_type.outputs.bump }}
+        INITIAL_VERSION: 0.1.0
+        PRERELEASE: false
+    
+    - name: Update version in manifest and package files
+      run: |
+        NEW_VERSION="${{ steps.tag_version.outputs.new_tag }}"
+        OLD_VERSION="${{ steps.tag_version.outputs.tag }}"
+        
+        echo "Updating from $OLD_VERSION to $NEW_VERSION"
+        
+        # Update manifest.json
+        sed -i "s/\"version\": \"$OLD_VERSION\"/\"version\": \"$NEW_VERSION\"/" manifest.json
+        
+        # Update package.json
+        sed -i "s/\"version\": \"$OLD_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
+        
+        # Update or create versions.json
+        if [ ! -f versions.json ]; then
+          echo "{" > versions.json
+          echo "  \"$NEW_VERSION\": \"0.9.0\"" >> versions.json
+          echo "}" >> versions.json
+        else
+          # Install jq for JSON manipulation
+          sudo apt-get update -qq && sudo apt-get install -y jq
+          jq --arg version "$NEW_VERSION" --arg minAppVersion "0.9.0" \
+             '. + {($version): $minAppVersion}' versions.json > versions.tmp
+          mv versions.tmp versions.json
+        fi
+        
+        echo "✅ Updated version files"
+    
+    - name: Commit version bump
+      run: |
+        NEW_VERSION="${{ steps.tag_version.outputs.new_tag }}"
+        
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        git add manifest.json package.json versions.json
+        
+        # Only commit if there are changes
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git push origin main
+          echo "✅ Version files updated and pushed"
+        fi
+    
+    - name: Summary
+      run: |
+        echo "🎉 Version bumped to ${{ steps.tag_version.outputs.new_tag }}"
+        echo "📦 Tag created and pushed"
+        echo "🚀 Release workflow will now build and publish"

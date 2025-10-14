@@ -83,15 +83,15 @@ export class GeminiClient {
 		const originalGcpCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 		
 		try {
-		delete process.env.GOOGLE_CLOUD_PROJECT;
-		delete process.env.GOOGLE_CLOUD_LOCATION;
-		delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
-		delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-		
-		Logger.debug('Gemini', 'Cleared GCP environment variables to prevent metadata service calls');
-		Logger.debug('Gemini', 'GOOGLE_CLOUD_PROJECT: undefined (cleared)');
-		Logger.debug('Gemini', 'GOOGLE_CLOUD_LOCATION: undefined (cleared)');
-		Logger.debug('Gemini', 'GOOGLE_GENAI_USE_VERTEXAI: undefined (cleared)');
+			delete process.env.GOOGLE_CLOUD_PROJECT;
+			delete process.env.GOOGLE_CLOUD_LOCATION;
+			delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+			delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+			
+			Logger.debug('Gemini', 'Cleared GCP environment variables to prevent metadata service calls');
+			Logger.debug('Gemini', 'GOOGLE_CLOUD_PROJECT: undefined (cleared)');
+			Logger.debug('Gemini', 'GOOGLE_CLOUD_LOCATION: undefined (cleared)');
+			Logger.debug('Gemini', 'GOOGLE_GENAI_USE_VERTEXAI: undefined (cleared)');
 			
 			if (this.settings.useOAuth) {
 				Logger.debug('Gemini', 'Initializing with OAuth authentication');
@@ -111,12 +111,18 @@ export class GeminiClient {
 						throw new Error('OAuth token expired and no refresh token available');
 					}
 
-					Logger.debug('Gemini', 'Token expired, refreshing...');
-					const proxyUrl = this.settings.oauthProxyUrl || 'https://oauth.sysrq.io/obsidian-ai-note-organizer';
-					const newTokens = await OAuthHandler.refreshToken(
-						this.settings.oauthRefreshToken,
-						proxyUrl
-					);
+				Logger.debug('Gemini', 'Token expired, refreshing...');
+				
+				// Check if OAuth credentials are configured
+				if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
+					throw new Error('OAuth Client ID and Client Secret not configured. Please configure them in settings.');
+				}
+				
+				// Initialize OAuth handler and refresh token
+				const oauthHandler = new OAuthHandler();
+				await oauthHandler.initialize(this.settings.oauthClientId, this.settings.oauthClientSecret);
+				
+				const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
 
 					this.settings.oauthAccessToken = newTokens.access_token;
 					if (newTokens.refresh_token) {
@@ -1020,20 +1026,20 @@ export class GeminiClient {
 			const vaultFiles = this.vaultAdapter.vault.getFiles();
 			Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
 
-		const defaultExcludes = [
-			'node_modules/**',
-			'.git/**',
-			`${this.app.vault.configDir}/**`, // Use vault's configDir instead of hardcoded .obsidian
-			'*.log',
-			'*.tmp',
-			'*.cache',
-			'*.lock',
-			'*.pid',
-			'*.seed',
-			'*.pid.lock',
-			'.DS_Store',
-			'Thumbs.db'
-		];
+			const defaultExcludes = [
+				'node_modules/**',
+				'.git/**',
+				'.obsidian/**',
+				'*.log',
+				'*.tmp',
+				'*.cache',
+				'*.lock',
+				'*.pid',
+				'*.seed',
+				'*.pid.lock',
+				'.DS_Store',
+				'Thumbs.db'
+			];
 
 			const effectiveExcludes = useDefaultExcludes 
 				? [...defaultExcludes, ...exclude]
@@ -1222,10 +1228,10 @@ export class GeminiClient {
 	}
 
 	async *sendMessage(userMessage: string): AsyncGenerator<StreamChunk> {
-		Logger.separator('Gemini');
+		console.log('═══════════════════════════════════════════════════════════════');
 		Logger.debug('Gemini', '🚀 sendMessage called');
 		Logger.debug('Gemini', 'User message:', userMessage);
-		Logger.separator('Gemini');
+		console.log('═══════════════════════════════════════════════════════════════');
 
 		// Auto-reinitialize if client is not available (fixes inactivity timeout)
 		if (!this.isInitialized()) {
@@ -1258,11 +1264,19 @@ export class GeminiClient {
 				parts: [{ text: userMessage }]
 			});
 		} else {
-			// For first message, prepend system prompt
-			contents.push({
-				role: 'user',
-				parts: [{ text: systemPrompt + '\n\n' + userMessage }]
-			});
+			// For first message with SDK (non-OAuth), prepend system prompt to user message
+			// For Direct API (OAuth), system prompt is sent separately as system_instruction
+			if (usingDirectAPI) {
+				contents.push({
+					role: 'user',
+					parts: [{ text: userMessage }]
+				});
+			} else {
+				contents.push({
+					role: 'user',
+					parts: [{ text: systemPrompt + '\n\n' + userMessage }]
+				});
+			}
 		}
 
 		const effectiveModel = getEffectiveModel(this.settings.fallbackMode, this.settings.model);
@@ -1291,7 +1305,8 @@ export class GeminiClient {
 
 			let stream;
 			if (usingDirectAPI) {
-				stream = this.directAPIClient!.generateContentStream(
+				// Direct API (OAuth) uses non-streaming generateContent
+				const response = await this.directAPIClient!.generateContent(
 					effectiveModel,
 					contents,
 					systemPrompt,
@@ -1301,6 +1316,10 @@ export class GeminiClient {
 						maxOutputTokens: this.settings.maxTokens
 					}
 				);
+				// Wrap in array to match SDK stream format
+				stream = (async function*() {
+					yield { candidates: response.candidates, usageMetadata: response.usageMetadata };
+				})();
 			} else if (this.googleGenAI) {
 				// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 				const config: any = {
@@ -1316,11 +1335,11 @@ export class GeminiClient {
 						}
 					};
 					
-				// 🔍 DEBUG: Log full tool structure
-				Logger.debug('DEBUG', '🛠️  Tools in config:');
-				Logger.debug('DEBUG', JSON.stringify(this.tools, null, 2));
-				Logger.debug('DEBUG', 'Tool count:', this.tools[0]?.functionDeclarations?.length);
-				Logger.debug('DEBUG', 'First tool:', this.tools[0]?.functionDeclarations?.[0]?.name);
+					// 🔍 DEBUG: Log full tool structure
+					Logger.debug('DEBUG', '🛠️  Tools in config:');
+					console.log(JSON.stringify(this.tools, null, 2));
+					Logger.debug('DEBUG', 'Tool count:', this.tools[0]?.functionDeclarations?.length);
+					Logger.debug('DEBUG', 'First tool:', this.tools[0]?.functionDeclarations?.[0]?.name);
 				}
 				
 				const params: any = {
@@ -1548,7 +1567,8 @@ export class GeminiClient {
 
 					let followUpStream;
 					if (usingDirectAPI) {
-						followUpStream = this.directAPIClient!.generateContentStream(
+						// Direct API (OAuth) uses non-streaming generateContent
+						const followUpResponse = await this.directAPIClient!.generateContent(
 							effectiveModel,
 							clonedHistory as Content[],
 							systemPrompt,
@@ -1558,6 +1578,10 @@ export class GeminiClient {
 								maxOutputTokens: this.settings.maxTokens
 							}
 						);
+						// Wrap in async generator to match SDK stream format
+						followUpStream = (async function*() {
+							yield { candidates: followUpResponse.candidates, usageMetadata: followUpResponse.usageMetadata };
+						})();
 					} else if (this.googleGenAI) {
 						// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 						const followUpConfig: any = {
@@ -1648,8 +1672,8 @@ export class GeminiClient {
 				done: true
 			};
 
-		Logger.debug('Gemini', 'Final conversation history has', this.history.length, 'items');
-		Logger.separator('Gemini');
+			Logger.debug('Gemini', 'Final conversation history has', this.history.length, 'items');
+			console.log('═══════════════════════════════════════════════════════════════');
 
 		} catch (error: any) {
 			Logger.error('Gemini', 'Error in sendMessage:', error);

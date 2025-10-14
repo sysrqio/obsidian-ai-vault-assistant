@@ -4,27 +4,41 @@
  */
 
 import * as https from 'https';
+import * as zlib from 'zlib';
 import type { Content } from '@google/genai';
 import { Logger } from './utils/logger';
 
 export class DirectGeminiAPIClient {
 	private accessToken: string;
-	private quotaUser: string | null = null;
-	private baseUrl = 'https://generativelanguage.googleapis.com';
-	private apiVersion = 'v1beta';
+	private userId: string | null = null;
+	private projectId: string | null = null;
+	private baseUrl = 'https://cloudcode-pa.googleapis.com';
+	private apiVersion = 'v1internal';
 
 	constructor(accessToken: string) {
 		this.accessToken = accessToken;
 	}
 
 	/**
-	 * Fetch user info for quota delegation
+	 * Generate UUID for session and prompt tracking
+	 */
+	private generateUUID(): string {
+		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+			const r = Math.random() * 16 | 0;
+			const v = c === 'x' ? r : (r & 0x3 | 0x8);
+			return v.toString(16);
+		});
+	}
+
+	/**
+	 * Fetch user info
 	 */
 	async fetchUserInfo(): Promise<void> {
-		if (this.quotaUser) return; // Already fetched
+		if (this.userId) return; // Already fetched
 
 		try {
-			const url = 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json';
+			// Use v2 endpoint to match gemini-cli
+			const url = 'https://www.googleapis.com/oauth2/v2/userinfo';
 			const response = await new Promise<any>((resolve, reject) => {
 				const req = https.request(url, {
 					method: 'GET',
@@ -46,32 +60,102 @@ export class DirectGeminiAPIClient {
 				req.end();
 			});
 
-			this.quotaUser = response.id;
-			Logger.debug('DirectAPI', '✅ User ID fetched for quota delegation:', this.quotaUser);
+			this.userId = response.id;
+			Logger.debug('DirectAPI', '✅ User info fetched:');
+			Logger.debug('DirectAPI', '  ID:', this.userId);
+			Logger.debug('DirectAPI', '  Email:', response.email);
+			Logger.debug('DirectAPI', '  Name:', response.name);
+			Logger.debug('DirectAPI', '  Verified:', response.verified_email);
 		} catch (error) {
 			Logger.error('DirectAPI', 'Failed to fetch user info:', error);
-			// Continue without quota delegation
+			throw error; // This is required for the API call
 		}
 	}
 
 	/**
-	 * Generate content stream with OAuth
+	 * Load Code Assist configuration (matches gemini-cli)
+	 * Gets project ID and tier information
 	 */
-	async *generateContentStream(
+	async loadCodeAssist(): Promise<void> {
+		if (this.projectId) return; // Already loaded
+
+		try {
+			const url = `${this.baseUrl}/v1internal:loadCodeAssist`;
+			const requestBody = JSON.stringify({
+				metadata: {
+					ideType: 'IDE_UNSPECIFIED',
+					platform: 'PLATFORM_UNSPECIFIED',
+					pluginType: 'GEMINI'
+				}
+			});
+
+			const response = await new Promise<any>((resolve, reject) => {
+				const urlObj = new URL(url);
+				const req = https.request({
+					hostname: urlObj.hostname,
+					port: 443,
+					path: urlObj.pathname,
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${this.accessToken}`,
+						'User-Agent': 'google-api-nodejs-client/9.15.1',
+						'x-goog-api-client': 'gl-node/24.9.0',
+						'Content-Length': Buffer.byteLength(requestBody)
+					}
+				}, (res) => {
+					let data = '';
+					res.on('data', (chunk) => data += chunk);
+					res.on('end', () => {
+						if (res.statusCode === 200) {
+							resolve(JSON.parse(data));
+						} else {
+							reject(new Error(`Failed to load Code Assist: ${res.statusCode} - ${data}`));
+						}
+					});
+				});
+				req.on('error', reject);
+				req.write(requestBody);
+				req.end();
+			});
+
+			this.projectId = response.cloudaicompanionProject;
+			
+			Logger.debug('DirectAPI', '✅ Code Assist loaded:');
+			Logger.debug('DirectAPI', '  Project ID:', this.projectId);
+			Logger.debug('DirectAPI', '  Current Tier:', response.currentTier?.name);
+			Logger.debug('DirectAPI', '  Tier Description:', response.currentTier?.description);
+			Logger.debug('DirectAPI', '  GCP Managed:', response.gcpManaged);
+		} catch (error) {
+			Logger.error('DirectAPI', 'Failed to load Code Assist:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Generate content with OAuth (non-streaming for simpler implementation)
+	 */
+	async generateContent(
 		model: string,
 		contents: Content[],
 		systemInstruction: string,
 		tools: any[],
 		config: { temperature: number; maxOutputTokens: number }
-	): AsyncGenerator<any> {
-		Logger.debug('DirectAPI', 'Making direct call to generativelanguage.googleapis.com');
+	): Promise<any> {
+		Logger.debug('DirectAPI', 'Making direct call to cloudcode-pa.googleapis.com');
 		Logger.debug('DirectAPI', 'Model:', model);
-		Logger.debug('DirectAPI', 'Using OAuth Bearer token with standard Gemini API');
-		Logger.debug('DirectAPI', 'Mode: streamGenerateContent (returns JSON array)');
+		Logger.debug('DirectAPI', 'Using OAuth Bearer token with Gemini Code Assist API');
+		Logger.debug('DirectAPI', 'Mode: streamGenerateContent with SSE');
 
+		// Fetch user info and Code Assist config (matches gemini-cli flow)
 		await this.fetchUserInfo();
+		await this.loadCodeAssist();
 
-		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:streamGenerateContent`;
+		if (!this.projectId) {
+			throw new Error('Failed to load Code Assist project ID');
+		}
+
+		const url = `${this.baseUrl}/${this.apiVersion}:streamGenerateContent?alt=sse`;
 		
 		// CRITICAL: Manually serialize contents to ensure functionResponse is included
 		const serializedContents = contents.map((content, cidx) => {
@@ -112,30 +196,48 @@ export class DirectGeminiAPIClient {
 			};
 		});
 
-		const headers: Record<string, string> = {
-			'Content-Type': 'application/json',
-			'Authorization': `Bearer ${this.accessToken}`,
-		};
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		'Authorization': `Bearer ${this.accessToken}`,
+		'Accept': '*/*',
+		'Accept-Encoding': 'gzip,deflate',
+		// Identify as AI Vault Assistant Obsidian plugin
+		'User-Agent': 'AI-Vault-Assistant/0.1.0 (Obsidian; darwin; arm64)',
+		'x-goog-api-client': 'ai-vault-assistant/0.1.0',
+		'Connection': 'close'
+	};
 
-		if (this.quotaUser) {
-			headers['X-Goog-Quota-User'] = this.quotaUser;
-			Logger.debug('DirectAPI', '💳 Using X-Goog-Quota-User for billing delegation:', this.quotaUser);
-		}
+	// Generate unique IDs for session and prompt (matching gemini-cli)
+	const sessionId = this.generateUUID();
+	const userPromptId = `${sessionId}########0`;
 
-		const body: any = {
+		// Wrap the request in gemini-cli format
+		const innerRequest: any = {
 			contents: serializedContents,
 			generationConfig: {
 				temperature: config.temperature,
-				maxOutputTokens: config.maxOutputTokens,
+				topP: 1
 			},
-			system_instruction: {
-				parts: [{ text: systemInstruction }]
-			}
+			session_id: sessionId  // session_id goes INSIDE request object
 		};
 
 		if (tools && tools.length > 0) {
-			body.tools = tools;
+			innerRequest.tools = tools;
 		}
+		
+		if (systemInstruction) {
+			innerRequest.systemInstruction = {
+				role: 'user',
+				parts: [{ text: systemInstruction }]
+			};
+		}
+
+	const body: any = {
+		model: model,
+		project: this.projectId,
+		user_prompt_id: userPromptId,
+		request: innerRequest
+	};
 
 		Logger.debug('DirectAPI', '✅ Using correct REST API systemInstruction format (object)');
 		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -167,7 +269,8 @@ export class DirectGeminiAPIClient {
 		const options: https.RequestOptions = {
 			hostname: urlObj.hostname,
 			port: 443,
-			path: urlObj.pathname,
+			// Ensure query string (?alt=sse) is included; otherwise endpoint schema differs
+			path: `${urlObj.pathname}${urlObj.search}`,
 			method: 'POST',
 			headers: {
 				...headers,
@@ -179,6 +282,7 @@ export class DirectGeminiAPIClient {
 			const httpResponse = await new Promise<any>((resolve, reject) => {
 				const req = https.request(options, (res) => {
 					Logger.debug('DirectAPI', 'Response status:', res.statusCode);
+					Logger.debug('DirectAPI', 'Response encoding:', res.headers['content-encoding'] || 'none');
 					
 					if (res.statusCode && res.statusCode >= 400) {
 						let errorData = '';
@@ -192,7 +296,16 @@ export class DirectGeminiAPIClient {
 						return;
 					}
 					
-					resolve(res);
+					// Handle decompression based on Content-Encoding
+					let stream: any = res;
+					const encoding = res.headers['content-encoding'];
+					if (encoding === 'gzip') {
+						stream = res.pipe(zlib.createGunzip());
+					} else if (encoding === 'deflate') {
+						stream = res.pipe(zlib.createInflate());
+					}
+					
+					resolve(stream);
 				});
 
 				req.on('error', (error) => {
@@ -215,60 +328,68 @@ export class DirectGeminiAPIClient {
 				const chunkStr = chunk.toString();
 				totalBytes += chunkStr.length;
 				Logger.debug('DirectAPI', 'Received bytes:', chunkStr.length);
-				
 				buffer += chunkStr;
-
-				// Try to parse complete JSON objects from buffer
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-				for (const line of lines) {
-					if (line.trim().startsWith('[')) {
-						// Start of JSON array
-						buffer = line + '\n' + buffer;
-					} else if (line.trim() === '' || line.trim() === ',') {
-						continue;
-					} else if (line.trim()) {
-						buffer = line + '\n' + buffer;
-					}
-				}
 			}
 
-			// Parse final buffer
-			if (buffer.trim()) {
-				Logger.debug('DirectAPI', '✅ Stream ended - response complete!');
-				Logger.debug('DirectAPI', 'Total response size:', totalBytes, 'bytes');
-				Logger.debug('DirectAPI', 'Raw response preview:', buffer.substring(0, 500));
-				Logger.debug('DirectAPI', 'Parsing JSON array ...');
+			// Parse final buffer (SSE format)
+			Logger.debug('DirectAPI', '✅ Response complete!');
+			Logger.debug('DirectAPI', 'Total response size:', totalBytes, 'bytes');
+			Logger.debug('DirectAPI', 'Raw response (first 500 chars):', buffer.substring(0, 500));
+			Logger.debug('DirectAPI', 'Raw response (last 500 chars):', buffer.substring(Math.max(0, buffer.length - 500)));
+			Logger.debug('DirectAPI', 'Parsing SSE response...');
 
-				// Remove array brackets and parse
-				let jsonArray = buffer.trim();
-				if (jsonArray.startsWith('[') && jsonArray.endsWith(']')) {
-					jsonArray = jsonArray.slice(1, -1);
-				}
+		// Parse SSE format: multiple "data: {...}" lines
+		const lines = buffer.split('\n');
+		const dataLines = lines.filter(line => line.trim().startsWith('data:'));
+		
+		if (dataLines.length === 0) {
+			throw new Error('No data lines found in SSE response');
+		}
+		
+		Logger.debug('DirectAPI', `Found ${dataLines.length} SSE data lines`);
+		
+		// Combine all chunks (each chunk has partial text)
+		let combinedText = '';
+		let finalResponse: any = null;
+		
+		for (const dataLine of dataLines) {
+			const jsonStr = dataLine.substring(5).trim(); // Remove "data:" prefix
+			const parsed = JSON.parse(jsonStr);
+			const chunk = parsed.response || parsed;
+			
+			// Accumulate text from each chunk
+			const chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || '';
+			combinedText += chunkText;
+			
+			// Keep the last chunk for metadata (usage, finishReason, etc.)
+			finalResponse = chunk;
+		}
+		
+		// Replace the text in the final response with the combined text
+		if (finalResponse && finalResponse.candidates?.[0]?.content?.parts?.[0]) {
+			finalResponse.candidates[0].content.parts[0].text = combinedText;
+		}
+		
+		const response = finalResponse;
 
-				// Parse as single object (streaming returns array with one object)
-				const response = JSON.parse(jsonArray);
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '✅ RESPONSE PARSED:');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', 'Candidates:', response.candidates?.length || 0);
+		Logger.debug('DirectAPI', 'Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
+		response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
+			if (p.text) Logger.debug('DirectAPI', `Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
+			if (p.functionCall) Logger.debug('DirectAPI', `Part ${i}: Function call:`, p.functionCall.name);
+			if (p.functionResponse) Logger.debug('DirectAPI', `Part ${i}: Function response:`, p.functionResponse.name);
+		});
+		Logger.debug('DirectAPI', 'Usage:', response.usageMetadata);
+		Logger.debug('DirectAPI', 'Full response:', JSON.stringify(response, null, 2));
 
-				Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-				Logger.debug('DirectAPI', '✅ RESPONSE PARSED:');
-				Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-				Logger.debug('DirectAPI', 'Candidates:', response.candidates?.length || 0);
-				Logger.debug('DirectAPI', 'Parts:', response.candidates?.[0]?.content?.parts?.length || 0);
-				response.candidates?.[0]?.content?.parts?.forEach((p: any, i: number) => {
-					if (p.text) Logger.debug('DirectAPI', `Part ${i}: Text (${p.text.length} chars):`, p.text.substring(0, 100));
-					if (p.functionCall) Logger.debug('DirectAPI', `Part ${i}: Function call:`, p.functionCall.name);
-					if (p.functionResponse) Logger.debug('DirectAPI', `Part ${i}: Function response:`, p.functionResponse.name);
-				});
-				Logger.debug('DirectAPI', 'Usage:', response.usageMetadata);
-				Logger.debug('DirectAPI', 'Full response:', JSON.stringify(response, null, 2));
-
-				yield response;
-			}
-
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-			Logger.debug('DirectAPI', '✅ RESPONSE COMPLETE');
-			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '✅ RESPONSE COMPLETE');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		
+		return response;
 
 		} catch (error: any) {
 			Logger.error('DirectAPI', 'Stream error:', error);
@@ -287,7 +408,13 @@ export class DirectGeminiAPIClient {
 		Logger.debug('DirectAPI', 'Making grounded search request');
 		Logger.debug('DirectAPI', 'Query:', query);
 
+		// Fetch user info and Code Assist config
 		await this.fetchUserInfo();
+		await this.loadCodeAssist();
+
+		if (!this.projectId) {
+			throw new Error('Failed to load Code Assist project ID');
+		}
 
 		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:generateContent`;
 		
@@ -296,10 +423,7 @@ export class DirectGeminiAPIClient {
 			'Authorization': `Bearer ${this.accessToken}`,
 		};
 
-		if (this.quotaUser) {
-			headers['X-Goog-Quota-User'] = this.quotaUser;
-			Logger.debug('DirectAPI', '💳 Using quota delegation for search');
-		}
+		// No quota header needed for Code Assist API
 
 		const body = {
 			contents: contents.map(c => ({

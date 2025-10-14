@@ -52,6 +52,8 @@ export interface GeminiSettings {
 	apiKey: string;
 	model: string;
 	useOAuth: boolean;
+	oauthClientId?: string;
+	oauthClientSecret?: string;
 	oauthAccessToken?: string;
 	oauthRefreshToken?: string;
 	oauthExpiresAt?: number;
@@ -69,6 +71,8 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	apiKey: '',
 	model: 'gemini-2.5-pro',
 	useOAuth: false,
+	oauthClientId: undefined,
+	oauthClientSecret: undefined,
 	oauthAccessToken: undefined,
 	oauthRefreshToken: undefined,
 	oauthExpiresAt: undefined,
@@ -140,18 +144,106 @@ export class GeminiSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'AI Vault Assistant Settings' });
 
 		// Authentication Section
-	containerEl.createEl('h3', { text: 'API Key' });
+	containerEl.createEl('h3', { text: 'Authentication' });
 
 	new Setting(containerEl)
-		.setName('API Key')
-		.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
-		.addText(text => text
-			.setPlaceholder('Enter your API key')
-			.setValue(this.plugin.settings.apiKey)
+		.setName('Use OAuth')
+		.setDesc('Use OAuth authentication (Login with Google) - Consumer door like gemini-cli')
+		.addToggle(toggle => toggle
+			.setValue(this.plugin.settings.useOAuth)
 			.onChange(async (value) => {
-				this.plugin.settings.apiKey = value;
+				this.plugin.settings.useOAuth = value;
 				await this.plugin.saveSettings();
+				
+				// Re-initialize the client when authentication method changes
+				try {
+					await (this.plugin as any).geminiClient?.initialize();
+					new Notice('✅ Client re-initialized with new authentication method');
+				} catch (error) {
+					Logger.error('Settings', 'Failed to re-initialize client:', error);
+					new Notice(`❌ Failed to re-initialize: ${(error as Error).message}`);
+				}
+				
+				this.display(); // Refresh to show/hide API key field
 			}));
+
+	if (this.plugin.settings.useOAuth) {
+		// OAuth credentials info
+		const infoDesc = document.createDocumentFragment();
+		infoDesc.createEl('div', { text: 'Get OAuth credentials from gemini-cli source code:' });
+		const link = infoDesc.createEl('a', { 
+			text: 'https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts',
+			href: 'https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts'
+		});
+		link.setAttr('target', '_blank');
+		infoDesc.createEl('div', { text: 'Look for OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET constants.' });
+		
+		new Setting(containerEl)
+			.setName('OAuth Credentials')
+			.setDesc(infoDesc);
+		
+		new Setting(containerEl)
+			.setName('OAuth Client ID')
+			.setDesc('Client ID from gemini-cli source (starts with 681255809395-...)')
+			.addText(text => text
+				.setPlaceholder('Paste OAUTH_CLIENT_ID from gemini-cli')
+				.setValue(this.plugin.settings.oauthClientId || '')
+				.onChange(async (value) => {
+					this.plugin.settings.oauthClientId = value;
+					await this.plugin.saveSettings();
+				}));
+		
+		new Setting(containerEl)
+			.setName('OAuth Client Secret')
+			.setDesc('Client secret from gemini-cli source (starts with GOCSPX-...)')
+			.addText(text => text
+				.setPlaceholder('Paste OAUTH_CLIENT_SECRET from gemini-cli')
+				.setValue(this.plugin.settings.oauthClientSecret || '')
+				.onChange(async (value) => {
+					this.plugin.settings.oauthClientSecret = value;
+					await this.plugin.saveSettings();
+				}));
+		const status = this.plugin.settings.oauthAccessToken 
+			? '✅ Authenticated' 
+			: '❌ Not authenticated';
+		
+		new Setting(containerEl)
+			.setName('OAuth Status')
+			.setDesc(status)
+			.addButton(button => button
+				.setButtonText('Authenticate')
+				.setCta()
+				.onClick(async () => {
+					await (this.plugin as any).startOAuthFlow();
+				}))
+			.addButton(button => button
+				.setButtonText('Clear Tokens')
+				.setWarning()
+				.onClick(async () => {
+					this.plugin.settings.oauthAccessToken = '';
+					this.plugin.settings.oauthRefreshToken = '';
+					this.plugin.settings.oauthExpiresAt = 0;
+					await this.plugin.saveSettings();
+					new Notice('OAuth tokens cleared');
+					this.display();
+				}))
+			.addButton(button => button
+				.setButtonText('Test API')
+				.onClick(async () => {
+					await this.testOAuthAPI();
+				}));
+	} else {
+		new Setting(containerEl)
+			.setName('API Key')
+			.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
+			.addText(text => text
+				.setPlaceholder('Enter your API key')
+				.setValue(this.plugin.settings.apiKey)
+				.onChange(async (value) => {
+					this.plugin.settings.apiKey = value;
+					await this.plugin.saveSettings();
+				}));
+	}
 
 		// Model Configuration
 		containerEl.createEl('h3', { text: 'Model Configuration' });
@@ -460,6 +552,7 @@ export class GeminiSettingTab extends PluginSettingTab {
 
 	/**
 	 * Test OAuth API connection
+	 * Tests the complete gemini-cli flow: userinfo → loadCodeAssist → generateContent
 	 */
 	async testOAuthAPI(): Promise<void> {
 		if (!this.plugin.settings.oauthAccessToken) {
@@ -468,21 +561,74 @@ export class GeminiSettingTab extends PluginSettingTab {
 		}
 
 		try {
-			// Test API call using the OAuth token
-			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
-				headers: {
-					'Authorization': `Bearer ${this.plugin.settings.oauthAccessToken}`,
+			Logger.info('OAuth Test', 'Starting OAuth API test...');
+			
+			// DEBUGGING: Inspect the access token to see what scopes it actually has
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('🔍 OAUTH TOKEN INSPECTION');
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('CURRENT ACCESS TOKEN:', this.plugin.settings.oauthAccessToken);
+			console.log('Token expires at:', new Date((this.plugin.settings.oauthExpiresAt || 0) * 1000).toISOString());
+			
+			// Inspect token scopes using Google's tokeninfo endpoint
+			const tokenInfoResponse = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${this.plugin.settings.oauthAccessToken}`);
+			const tokenInfo = await tokenInfoResponse.json();
+			
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			console.log('📋 TOKEN INFO FROM GOOGLE:');
+			console.log(JSON.stringify(tokenInfo, null, 2));
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			
+			if (tokenInfo.scope) {
+				const scopes = tokenInfo.scope.split(' ');
+				console.log('🔐 GRANTED SCOPES:');
+				scopes.forEach((scope: string) => {
+					const hasCloudPlatform = scope.includes('cloud-platform');
+					console.log(`  ${hasCloudPlatform ? '✅' : '  '} ${scope}`);
+				});
+				
+				const hasRequiredScope = scopes.some((s: string) => s.includes('cloud-platform'));
+				if (!hasRequiredScope) {
+					console.error('❌ MISSING REQUIRED SCOPE: https://www.googleapis.com/auth/cloud-platform');
+					console.error('   You need to:');
+					console.error('   1. Update your GCP OAuth consent screen to include cloud-platform scope');
+					console.error('   2. Log out and re-authenticate in the plugin settings');
+					new Notice('❌ Token missing cloud-platform scope! Check console for details.');
+					return;
+				} else {
+					console.log('✅ Token has cloud-platform scope!');
 				}
-			});
-
-			if (response.ok) {
-				new Notice('✅ OAuth API test successful!');
-			} else {
-				const errorText = await response.text();
-				new Notice(`❌ OAuth API test failed: ${response.status} ${errorText}`);
 			}
+			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			
+		// Test complete gemini-cli OAuth flow
+		Logger.info('OAuth Test', '🧪 Testing via DirectGeminiAPIClient (gemini-cli format)...');
+		Logger.info('OAuth Test', 'Flow: userinfo → loadCodeAssist → generateContent');
+		
+		if (!this.plugin.geminiClient || !this.plugin.geminiClient['directAPIClient']) {
+			new Notice('❌ OAuth Direct API client not initialized. Please authenticate first.');
+			return;
+		}
+		
+		const directClient = this.plugin.geminiClient['directAPIClient'];
+		
+		// This will automatically call:
+		// 1. fetchUserInfo() - GET /oauth2/v2/userinfo
+		// 2. loadCodeAssist() - POST /v1internal:loadCodeAssist  
+		// 3. streamGenerateContent - POST /v1internal:streamGenerateContent
+		const resp = await directClient.generateContent(
+			'gemini-2.5-flash',
+			[{ role: 'user', parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }] }],
+			'',
+			[],
+			{ temperature: 0.7, maxOutputTokens: 128 }
+		);
+		
+		const text = resp?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
+		Logger.info('OAuth Test', `✅ Test successful! Response: ${text.substring(0, 50)}...`);
+		new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
 		} catch (error) {
-			new Notice(`❌ OAuth API test error: ${error.message}`);
+			new Notice(`❌ OAuth API test error: ${(error as Error).message}`);
 		}
 	}
 }

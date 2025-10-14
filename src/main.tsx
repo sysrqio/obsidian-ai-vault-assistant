@@ -22,17 +22,12 @@ export default class GeminiPlugin extends Plugin {
 		this.vaultAdapter = new VaultAdapter(this.app.vault);
 		Logger.debug('Plugin', 'Vault adapter initialized');
 
-	const vaultPath = (this.app.vault.adapter as any).basePath || '';
-	// Use relative path for DataAdapter (relative to vault root)
-	const pluginDataPath = `${this.app.vault.configDir}/plugins/gemini-assistant`;
-	Logger.debug('Plugin', `Vault path: ${vaultPath}`);
-	Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
-	this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
-	Logger.debug('Plugin', 'Gemini client created');
-	
-	// Initialize the client (loads memories and sets up API)
-	await this.geminiClient.initialize();
-	Logger.debug('Plugin', 'Gemini client initialized');
+		const vaultPath = (this.app.vault.adapter as any).basePath || '';
+		const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
+		Logger.debug('Plugin', `Vault path: ${vaultPath}`);
+		Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
+		this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
+		Logger.debug('Plugin', 'Gemini client created');
 
 		this.registerView(
 			VIEW_TYPE_GEMINI,
@@ -44,13 +39,13 @@ export default class GeminiPlugin extends Plugin {
 		});
 		ribbonIconEl.addClass('gemini-ribbon-class');
 
-	this.addCommand({
-		id: 'open-ai-vault-assistant',
-		name: 'Open assistant',
-		callback: () => {
-			this.activateView();
-		}
-	});
+		this.addCommand({
+			id: 'open-ai-vault-assistant',
+			name: 'Open AI Vault Assistant',
+			callback: () => {
+				this.activateView();
+			}
+		});
 
 		this.addSettingTab(new GeminiSettingTab(this.app, this));
 
@@ -105,8 +100,7 @@ export default class GeminiPlugin extends Plugin {
 		
 		if (this.vaultAdapter && this.geminiClient) {
 			const vaultPath = (this.app.vault.adapter as any).basePath || '';
-			// Use relative path for DataAdapter (relative to vault root)
-			const pluginDataPath = `${this.app.vault.configDir}/plugins/gemini-assistant`;
+			const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
 			this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
 			
 			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINI);
@@ -123,10 +117,19 @@ export default class GeminiPlugin extends Plugin {
 		try {
 			Logger.debug('Plugin', 'Starting OAuth flow...');
 			
-			const proxyUrl = this.settings.oauthProxyUrl || 'https://oauth.sysrq.io/obsidian-ai-note-organizer';
-			Logger.debug('Plugin', 'Using proxy URL:', proxyUrl);
+			// Check if OAuth credentials are configured
+			if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
+				new Notice('❌ Please configure OAuth Client ID and Client Secret in settings first');
+				return;
+			}
 			
-			const tokens = await OAuthHandler.startOAuthFlow(proxyUrl);
+			const oauthHandler = new OAuthHandler();
+			
+			Logger.debug('Plugin', 'Initializing OAuth handler...');
+			await oauthHandler.initialize(this.settings.oauthClientId, this.settings.oauthClientSecret);
+			
+			Logger.debug('Plugin', 'Starting desktop OAuth flow (local HTTP server)...');
+			const tokens = await oauthHandler.startOAuthFlow();
 			
 			this.settings.oauthAccessToken = tokens.access_token;
 			this.settings.oauthRefreshToken = tokens.refresh_token;
@@ -135,11 +138,13 @@ export default class GeminiPlugin extends Plugin {
 			await this.saveSettings();
 			
 			new Notice('✅ OAuth authentication successful!');
+			Logger.debug('Plugin', 'OAuth tokens saved successfully');
 
+			// Reinitialize Gemini client with new tokens
 			await this.geminiClient?.initialize();
 
 		} catch (error) {
-			new Notice('❌ OAuth failed: ' + error.message);
+			new Notice('❌ OAuth failed: ' + (error as Error).message);
 			Logger.error('Plugin', 'OAuth error:', error);
 		}
 	}

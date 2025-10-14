@@ -140,18 +140,71 @@ export class GeminiSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'AI Vault Assistant Settings' });
 
 		// Authentication Section
-	containerEl.createEl('h3', { text: 'API Key' });
+	containerEl.createEl('h3', { text: 'Authentication' });
 
 	new Setting(containerEl)
-		.setName('API Key')
-		.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
-		.addText(text => text
-			.setPlaceholder('Enter your API key')
-			.setValue(this.plugin.settings.apiKey)
+		.setName('Use OAuth')
+		.setDesc('Use OAuth authentication (Login with Google) - Consumer door like gemini-cli')
+		.addToggle(toggle => toggle
+			.setValue(this.plugin.settings.useOAuth)
 			.onChange(async (value) => {
-				this.plugin.settings.apiKey = value;
+				this.plugin.settings.useOAuth = value;
 				await this.plugin.saveSettings();
+				
+				// Re-initialize the client when authentication method changes
+				try {
+					await (this.plugin as any).geminiClient?.initialize();
+					new Notice('✅ Client re-initialized with new authentication method');
+				} catch (error) {
+					Logger.error('Settings', 'Failed to re-initialize client:', error);
+					new Notice(`❌ Failed to re-initialize: ${(error as Error).message}`);
+				}
+				
+				this.display(); // Refresh to show/hide API key field
 			}));
+
+	if (this.plugin.settings.useOAuth) {
+		const status = this.plugin.settings.oauthAccessToken 
+			? '✅ Authenticated' 
+			: '❌ Not authenticated';
+		
+		new Setting(containerEl)
+			.setName('OAuth Status')
+			.setDesc(status)
+			.addButton(button => button
+				.setButtonText('Authenticate')
+				.setCta()
+				.onClick(async () => {
+					await (this.plugin as any).startOAuthFlow();
+				}))
+			.addButton(button => button
+				.setButtonText('Clear Tokens')
+				.setWarning()
+				.onClick(async () => {
+					this.plugin.settings.oauthAccessToken = '';
+					this.plugin.settings.oauthRefreshToken = '';
+					this.plugin.settings.oauthExpiresAt = 0;
+					await this.plugin.saveSettings();
+					new Notice('OAuth tokens cleared');
+					this.display();
+				}))
+			.addButton(button => button
+				.setButtonText('Test API')
+				.onClick(async () => {
+					await this.testOAuthAPI();
+				}));
+	} else {
+		new Setting(containerEl)
+			.setName('API Key')
+			.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
+			.addText(text => text
+				.setPlaceholder('Enter your API key')
+				.setValue(this.plugin.settings.apiKey)
+				.onChange(async (value) => {
+					this.plugin.settings.apiKey = value;
+					await this.plugin.saveSettings();
+				}));
+	}
 
 		// Model Configuration
 		containerEl.createEl('h3', { text: 'Model Configuration' });

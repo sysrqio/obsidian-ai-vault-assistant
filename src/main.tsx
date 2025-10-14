@@ -39,13 +39,13 @@ export default class GeminiPlugin extends Plugin {
 		});
 		ribbonIconEl.addClass('gemini-ribbon-class');
 
-		this.addCommand({
-			id: 'open-ai-vault-assistant',
-			name: 'Open AI Vault Assistant',
-			callback: () => {
-				this.activateView();
-			}
-		});
+	this.addCommand({
+		id: 'open-ai-vault-assistant',
+		name: 'Open assistant',
+		callback: () => {
+			this.activateView();
+		}
+	});
 
 		this.addSettingTab(new GeminiSettingTab(this.app, this));
 

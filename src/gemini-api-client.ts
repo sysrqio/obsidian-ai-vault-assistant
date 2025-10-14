@@ -203,7 +203,7 @@ export class DirectGeminiAPIClient {
 		'Accept-Encoding': 'gzip,deflate',
 		// Identify as AI Vault Assistant Obsidian plugin
 		'User-Agent': 'AI-Vault-Assistant/0.1.0 (Obsidian; darwin; arm64)',
-		'x-goog-api-client': 'obsidian-plugin/0.1.0',
+		'x-goog-api-client': 'ai-vault-assistant/0.1.0',
 		'Connection': 'close'
 	};
 

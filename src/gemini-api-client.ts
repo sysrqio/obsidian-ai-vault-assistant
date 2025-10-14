@@ -4,6 +4,7 @@
  */
 
 import * as https from 'https';
+import * as zlib from 'zlib';
 import type { Content } from '@google/genai';
 import { Logger } from './utils/logger';
 
@@ -195,14 +196,16 @@ export class DirectGeminiAPIClient {
 			};
 		});
 
-		const headers: Record<string, string> = {
-			'Content-Type': 'application/json',
-			'Authorization': `Bearer ${this.accessToken}`,
-			'Accept': '*/*',
-			// Align with gemini-cli headers
-			'User-Agent': 'GeminiCLI/v24.9.0 (darwin; arm64) google-api-nodejs-client/9.15.1',
-			'x-goog-api-client': 'gl-node/24.9.0'
-		};
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		'Authorization': `Bearer ${this.accessToken}`,
+		'Accept': '*/*',
+		'Accept-Encoding': 'gzip,deflate',
+		// Align with gemini-cli headers
+		'User-Agent': 'GeminiCLI/v24.9.0 (darwin; arm64) google-api-nodejs-client/9.15.1',
+		'x-goog-api-client': 'gl-node/24.9.0',
+		'Connection': 'close'
+	};
 
 	// Generate unique IDs for session and prompt (matching gemini-cli)
 	const sessionId = this.generateUUID();
@@ -279,6 +282,7 @@ export class DirectGeminiAPIClient {
 			const httpResponse = await new Promise<any>((resolve, reject) => {
 				const req = https.request(options, (res) => {
 					Logger.debug('DirectAPI', 'Response status:', res.statusCode);
+					Logger.debug('DirectAPI', 'Response encoding:', res.headers['content-encoding'] || 'none');
 					
 					if (res.statusCode && res.statusCode >= 400) {
 						let errorData = '';
@@ -292,7 +296,16 @@ export class DirectGeminiAPIClient {
 						return;
 					}
 					
-					resolve(res);
+					// Handle decompression based on Content-Encoding
+					let stream: any = res;
+					const encoding = res.headers['content-encoding'];
+					if (encoding === 'gzip') {
+						stream = res.pipe(zlib.createGunzip());
+					} else if (encoding === 'deflate') {
+						stream = res.pipe(zlib.createInflate());
+					}
+					
+					resolve(stream);
 				});
 
 				req.on('error', (error) => {

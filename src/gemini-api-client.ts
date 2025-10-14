@@ -10,9 +10,9 @@ import { Logger } from './utils/logger';
 export class DirectGeminiAPIClient {
 	private accessToken: string;
 	private userId: string | null = null;
+	private projectId: string | null = null;
 	private baseUrl = 'https://cloudcode-pa.googleapis.com';
 	private apiVersion = 'v1internal';
-	private projectId = 'natural-citron-81vqp'; // Gemini Code Assist project
 
 	constructor(accessToken: string) {
 		this.accessToken = accessToken;
@@ -72,6 +72,66 @@ export class DirectGeminiAPIClient {
 	}
 
 	/**
+	 * Load Code Assist configuration (matches gemini-cli)
+	 * Gets project ID and tier information
+	 */
+	async loadCodeAssist(): Promise<void> {
+		if (this.projectId) return; // Already loaded
+
+		try {
+			const url = `${this.baseUrl}/v1internal:loadCodeAssist`;
+			const requestBody = JSON.stringify({
+				metadata: {
+					ideType: 'IDE_UNSPECIFIED',
+					platform: 'PLATFORM_UNSPECIFIED',
+					pluginType: 'GEMINI'
+				}
+			});
+
+			const response = await new Promise<any>((resolve, reject) => {
+				const urlObj = new URL(url);
+				const req = https.request({
+					hostname: urlObj.hostname,
+					port: 443,
+					path: urlObj.pathname,
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${this.accessToken}`,
+						'User-Agent': 'google-api-nodejs-client/9.15.1',
+						'x-goog-api-client': 'gl-node/24.9.0',
+						'Content-Length': Buffer.byteLength(requestBody)
+					}
+				}, (res) => {
+					let data = '';
+					res.on('data', (chunk) => data += chunk);
+					res.on('end', () => {
+						if (res.statusCode === 200) {
+							resolve(JSON.parse(data));
+						} else {
+							reject(new Error(`Failed to load Code Assist: ${res.statusCode} - ${data}`));
+						}
+					});
+				});
+				req.on('error', reject);
+				req.write(requestBody);
+				req.end();
+			});
+
+			this.projectId = response.cloudaicompanionProject;
+			
+			Logger.debug('DirectAPI', '✅ Code Assist loaded:');
+			Logger.debug('DirectAPI', '  Project ID:', this.projectId);
+			Logger.debug('DirectAPI', '  Current Tier:', response.currentTier?.name);
+			Logger.debug('DirectAPI', '  Tier Description:', response.currentTier?.description);
+			Logger.debug('DirectAPI', '  GCP Managed:', response.gcpManaged);
+		} catch (error) {
+			Logger.error('DirectAPI', 'Failed to load Code Assist:', error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Generate content with OAuth (non-streaming for simpler implementation)
 	 */
 	async generateContent(
@@ -86,7 +146,13 @@ export class DirectGeminiAPIClient {
 		Logger.debug('DirectAPI', 'Using OAuth Bearer token with Gemini Code Assist API');
 		Logger.debug('DirectAPI', 'Mode: streamGenerateContent with SSE');
 
+		// Fetch user info and Code Assist config (matches gemini-cli flow)
 		await this.fetchUserInfo();
+		await this.loadCodeAssist();
+
+		if (!this.projectId) {
+			throw new Error('Failed to load Code Assist project ID');
+		}
 
 		const url = `${this.baseUrl}/${this.apiVersion}:streamGenerateContent?alt=sse`;
 		
@@ -306,7 +372,13 @@ export class DirectGeminiAPIClient {
 		Logger.debug('DirectAPI', 'Making grounded search request');
 		Logger.debug('DirectAPI', 'Query:', query);
 
+		// Fetch user info and Code Assist config
 		await this.fetchUserInfo();
+		await this.loadCodeAssist();
+
+		if (!this.projectId) {
+			throw new Error('Failed to load Code Assist project ID');
+		}
 
 		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:generateContent`;
 		

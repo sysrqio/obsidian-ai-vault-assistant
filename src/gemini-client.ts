@@ -1023,23 +1023,23 @@ export class GeminiClient {
 		Logger.debug('ReadManyFiles', 'Use default excludes:', useDefaultExcludes);
 
 		try {
-			const vaultFiles = this.vaultAdapter.vault.getFiles();
-			Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
+		const vaultFiles = this.vaultAdapter.vault.getFiles();
+		Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
 
-			const defaultExcludes = [
-				'node_modules/**',
-				'.git/**',
-				'.obsidian/**',
-				'*.log',
-				'*.tmp',
-				'*.cache',
-				'*.lock',
-				'*.pid',
-				'*.seed',
-				'*.pid.lock',
-				'.DS_Store',
-				'Thumbs.db'
-			];
+		const defaultExcludes = [
+			'node_modules/**',
+			'.git/**',
+			`${this.app.vault.configDir}/**`, // Use vault's configDir instead of hardcoded .obsidian
+			'*.log',
+			'*.tmp',
+			'*.cache',
+			'*.lock',
+			'*.pid',
+			'*.seed',
+			'*.pid.lock',
+			'.DS_Store',
+			'Thumbs.db'
+		];
 
 			const effectiveExcludes = useDefaultExcludes 
 				? [...defaultExcludes, ...exclude]

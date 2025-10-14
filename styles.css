@@ -343,6 +343,14 @@
     cursor: pointer;
 }
 
+.gemini-memory-save-btn.is-hidden {
+    display: none;
+}
+
+.gemini-memory-save-btn.is-visible {
+    display: inline-block;
+}
+
 /* Tool calls display */
 .gemini-tool-calls {
     margin-top: 12px;

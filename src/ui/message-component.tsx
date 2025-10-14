@@ -28,7 +28,10 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 	// Render markdown using Obsidian's renderer
 	React.useEffect(() => {
 		if (renderMarkdown && !isUser && contentRef.current && component) {
-			contentRef.current.innerHTML = '';
+			// Clear content using DOM API instead of innerHTML
+			while (contentRef.current.firstChild) {
+				contentRef.current.removeChild(contentRef.current.firstChild);
+			}
 			// Use vault root as sourcePath to enable wikilink resolution
 			MarkdownRenderer.renderMarkdown(
 				message.content,

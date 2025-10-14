@@ -1,5 +1,6 @@
 import { App, TFile, TFolder, WorkspaceLeaf, Notice, getAllTags } from 'obsidian';
 import { VaultAdapter } from './utils/vault-adapter';
+import { Logger } from './utils/logger';
 
 /**
  * Vault Tools - Advanced Obsidian vault operations
@@ -82,12 +83,12 @@ export class VaultTools {
 		
 		// If plugin exists and has API, use it (don't check 'enabled' as it may not exist)
 		if (omnisearchPlugin?.api) {
-			console.log('[VaultTools] ✅ Using Omnisearch plugin for search');
+			Logger.debug('VaultTools', '✅ Using Omnisearch plugin for search');
 			return await this.searchWithOmnisearch(query, limit, omnisearchPlugin.api);
 		}
 		
-		console.log('[VaultTools] ℹ️ Using built-in search (Omnisearch not available)');
-		console.log('[VaultTools] Reason: Omnisearch plugin', omnisearchPlugin ? 'found but no API' : 'not found');
+		Logger.debug('VaultTools', 'ℹ️ Using built-in search (Omnisearch not available)');
+		Logger.debug('VaultTools', 'Reason: Omnisearch plugin', omnisearchPlugin ? 'found but no API' : 'not found');
 		return await this.searchBuiltin(query, limit);
 	}
 
@@ -96,12 +97,12 @@ export class VaultTools {
 	 */
 	private async searchWithOmnisearch(query: string, limit: number, omnisearchAPI: any): Promise<string> {
 		try {
-			console.log(`[VaultTools] 🔍 Using Omnisearch for query: "${query}"`);
+			Logger.debug('VaultTools', `🔍 Using Omnisearch for query: "${query}"`);
 			
 			// Use Omnisearch API
 			const results = await omnisearchAPI.search(query);
 			
-			console.log(`[VaultTools] ✅ Omnisearch returned ${results?.length || 0} results`);
+			Logger.debug('VaultTools', `✅ Omnisearch returned ${results?.length || 0} results`);
 			
 			if (!results || results.length === 0) {
 				return `No results found for: "${query}"\n\n*Searched using Omnisearch plugin*`;
@@ -133,7 +134,7 @@ export class VaultTools {
 			
 			return output;
 		} catch (error) {
-			console.warn('[VaultTools] ⚠️ Omnisearch failed, falling back to built-in search:', error);
+			Logger.warn('VaultTools', '⚠️ Omnisearch failed, falling back to built-in search:', error);
 			return await this.searchBuiltin(query, limit);
 		}
 	}
@@ -142,7 +143,7 @@ export class VaultTools {
 	 * Built-in search implementation (fallback)
 	 */
 	private async searchBuiltin(query: string, limit: number): Promise<string> {
-		console.log(`[VaultTools] 🔍 Built-in search for query: "${query}"`);
+		Logger.debug('VaultTools', `🔍 Built-in search for query: "${query}"`);
 		
 		const files = this.app.vault.getMarkdownFiles();
 		const results: Array<{ file: TFile; matches: string[] }> = [];
@@ -178,7 +179,7 @@ export class VaultTools {
 			if (results.length >= limit) break;
 		}
 		
-		console.log(`[VaultTools] ✅ Built-in search found ${results.length} results`);
+		Logger.debug('VaultTools', `✅ Built-in search found ${results.length} results`);
 		
 		if (results.length === 0) {
 			return `No results found for: "${query}"`;
@@ -563,12 +564,13 @@ export class VaultTools {
 		
 		const fileName = file.basename;
 		
+		// Use app.fileManager.trashFile to respect user preferences
+		await this.app.fileManager.trashFile(file);
+		
 		if (permanent) {
-			await this.app.vault.delete(file);
-			return `Permanently deleted: ${fileName}`;
+			return `Permanently deleted (according to user settings): ${fileName}`;
 		} else {
-			await this.app.vault.trash(file, true); // true = use system trash
-			return `Moved to trash: ${fileName}`;
+			return `Deleted (according to user settings): ${fileName}`;
 		}
 	}
 

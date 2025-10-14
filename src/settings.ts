@@ -59,7 +59,6 @@ export interface GeminiSettings {
 	temperature: number;
 	maxTokens: number;
 	enableFileTools: boolean;
-	enableShellTools: boolean;
 	fallbackMode: boolean;
 	renderMarkdown: boolean;
 	logLevel: LogLevel;
@@ -77,10 +76,9 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	temperature: 0.7,
 	maxTokens: 8192,
 	enableFileTools: true,
-	enableShellTools: false,
 	fallbackMode: false,
 	renderMarkdown: true,
-	logLevel: 'info',
+	logLevel: 'warn', // Default to warn for production (only show warnings and errors)
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -142,108 +140,34 @@ export class GeminiSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'AI Vault Assistant Settings' });
 
 		// Authentication Section
-		containerEl.createEl('h3', { text: 'Authentication' });
+	containerEl.createEl('h3', { text: 'API Key' });
 
-		new Setting(containerEl)
-			.setName('Use OAuth')
-			.setDesc('Use OAuth authentication (Login with Google) - uses gemini-cli credentials')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.useOAuth)
-				.onChange(async (value) => {
-					this.plugin.settings.useOAuth = value;
-					await this.plugin.saveSettings();
-					
-					// Re-initialize the client when authentication method changes
-					try {
-						await (this.plugin as any).geminiClient?.initialize();
-						new Notice('✅ Client re-initialized with new authentication method');
-					} catch (error) {
-						console.error('Failed to re-initialize client:', error);
-						new Notice(`❌ Failed to re-initialize: ${error.message}`);
-					}
-					
-					this.display(); // Refresh to show/hide API key field
-				}));
-
-		if (this.plugin.settings.useOAuth) {
-			const status = this.plugin.settings.oauthAccessToken 
-				? '✅ Authenticated' 
-				: '❌ Not authenticated';
-			
-			new Setting(containerEl)
-				.setName('OAuth Status')
-				.setDesc(status)
-				.addButton(button => button
-					.setButtonText('Authenticate')
-					.setCta()
-					.onClick(async () => {
-						await (this.plugin as any).startOAuthFlow();
-					}))
-				.addButton(button => button
-					.setButtonText('Clear Tokens')
-					.setWarning()
-					.onClick(async () => {
-						this.plugin.settings.oauthAccessToken = '';
-						this.plugin.settings.oauthRefreshToken = '';
-						this.plugin.settings.oauthExpiresAt = 0;
-						await this.plugin.saveSettings();
-						new Notice('OAuth tokens cleared');
-						this.display();
-					}))
-				.addButton(button => button
-					.setButtonText('Test API')
-					.onClick(async () => {
-						await this.testOAuthAPI();
-					}));
-
-			new Setting(containerEl)
-				.setName('OAuth Proxy URL (Optional)')
-				.setDesc('Use a proxy server to hide client secret (default: https://oauth.sysrq.io/obsidian-ai-note-organizer)')
-				.addText(text => text
-					.setPlaceholder('https://oauth.sysrq.io/obsidian-ai-note-organizer')
-					.setValue(this.plugin.settings.oauthProxyUrl || '')
-					.onChange(async (value) => {
-						this.plugin.settings.oauthProxyUrl = value;
-						await this.plugin.saveSettings();
-					}));
-		} else {
-			new Setting(containerEl)
-				.setName('API Key')
-				.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
-				.addText(text => text
-					.setPlaceholder('Enter your API key')
-					.setValue(this.plugin.settings.apiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.apiKey = value;
-						await this.plugin.saveSettings();
-					}));
-		}
+	new Setting(containerEl)
+		.setName('API Key')
+		.setDesc('Your Gemini API key from https://aistudio.google.com/apikey')
+		.addText(text => text
+			.setPlaceholder('Enter your API key')
+			.setValue(this.plugin.settings.apiKey)
+			.onChange(async (value) => {
+				this.plugin.settings.apiKey = value;
+				await this.plugin.saveSettings();
+			}));
 
 		// Model Configuration
 		containerEl.createEl('h3', { text: 'Model Configuration' });
 
-		new Setting(containerEl)
-			.setName('Model')
-			.setDesc('Gemini model to use (will auto-fallback to Flash if Pro quota exceeded)')
-			.addDropdown(dropdown => dropdown
-				.addOption('gemini-2.5-pro', 'Gemini 2.5 Pro')
-				.addOption('gemini-2.5-flash', 'Gemini 2.5 Flash')
-				.addOption('gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite')
-				.setValue(this.plugin.settings.model)
-				.onChange(async (value) => {
-					this.plugin.settings.model = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Fallback Mode')
-			.setDesc('When enabled, automatically uses Flash model instead of Pro (follows gemini-cli pattern)')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.fallbackMode)
-				.onChange(async (value) => {
-					this.plugin.settings.fallbackMode = value;
-					await this.plugin.saveSettings();
-				}));
+	new Setting(containerEl)
+		.setName('Model')
+		.setDesc('Gemini model to use (will auto-fallback to Flash if Pro quota exceeded)')
+		.addDropdown(dropdown => dropdown
+			.addOption('gemini-2.5-pro', 'Gemini 2.5 Pro')
+			.addOption('gemini-2.5-flash', 'Gemini 2.5 Flash')
+			.addOption('gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite')
+			.setValue(this.plugin.settings.model)
+			.onChange(async (value) => {
+				this.plugin.settings.model = value;
+				await this.plugin.saveSettings();
+			}));
 
 		new Setting(containerEl)
 			.setName('Render Markdown')
@@ -255,16 +179,16 @@ export class GeminiSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		new Setting(containerEl)
-			.setName('Log Level')
-			.setDesc('Control console logging verbosity. Debug shows all logs, Info shows important events, Warn shows only warnings, Error shows only errors, None disables all logs.')
-			.addDropdown(dropdown => dropdown
-				.addOption('debug', 'Debug (All logs)')
-				.addOption('info', 'Info (Default)')
-				.addOption('warn', 'Warn (Warnings only)')
-				.addOption('error', 'Error (Errors only)')
-				.addOption('none', 'None (Silent)')
-				.setValue(this.plugin.settings.logLevel)
+	new Setting(containerEl)
+		.setName('Log Level')
+		.setDesc('Control console logging verbosity. Default: Warn (recommended for production). Use Debug for troubleshooting.')
+		.addDropdown(dropdown => dropdown
+			.addOption('warn', 'Warn (Recommended - Warnings & Errors only)')
+			.addOption('error', 'Error (Errors only)')
+			.addOption('info', 'Info (Important events)')
+			.addOption('debug', 'Debug (All logs - verbose)')
+			.addOption('none', 'None (Silent)')
+			.setValue(this.plugin.settings.logLevel)
 				.onChange(async (value: LogLevel) => {
 					this.plugin.settings.logLevel = value;
 					Logger.setLevel(value);
@@ -402,24 +326,14 @@ export class GeminiSettingTab extends PluginSettingTab {
 				.addOption('ask', 'Ask each time')
 				.addOption('always', 'Always allow')
 				.addOption('never', 'Never allow')
-				.setValue(this.plugin.settings.toolPermissions.save_memory)
-				.onChange(async (value: ToolPermission) => {
-					this.plugin.settings.toolPermissions.save_memory = value;
-					await this.plugin.saveSettings();
-				}));
+			.setValue(this.plugin.settings.toolPermissions.save_memory)
+			.onChange(async (value: ToolPermission) => {
+				this.plugin.settings.toolPermissions.save_memory = value;
+				await this.plugin.saveSettings();
+			}));
 
-		new Setting(containerEl)
-			.setName('Enable Shell Tools')
-			.setDesc('Allow Gemini to execute shell commands (use with caution)')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.enableShellTools)
-				.onChange(async (value) => {
-					this.plugin.settings.enableShellTools = value;
-					await this.plugin.saveSettings();
-				}));
-
-		// Memories Section
-		this.displayMemoriesSection(containerEl);
+	// Memories Section
+	this.displayMemoriesSection(containerEl);
 	}
 
 	private displayMemoriesSection(containerEl: HTMLElement): void {
@@ -501,27 +415,32 @@ export class GeminiSettingTab extends PluginSettingTab {
 			const actionsDiv = memoryDiv.createDiv({ cls: 'gemini-memory-actions' });
 			
 			// Save button (only shows if edited)
-			const saveButton = actionsDiv.createEl('button', {
-				text: 'Save',
-				cls: 'mod-cta gemini-memory-save-btn'
-			});
-			saveButton.style.display = 'none';
-			
-			saveButton.addEventListener('click', async () => {
-				const newFact = textarea.value.trim();
-				if (newFact && newFact !== memory.fact) {
-					await memoryManager.deleteMemory(memory.id);
-					await memoryManager.addMemory(newFact, memory.category);
-					new Notice('Memory updated');
-					this.display();
-				}
-			});
+		const saveButton = actionsDiv.createEl('button', {
+			text: 'Save',
+			cls: 'mod-cta gemini-memory-save-btn is-hidden'
+		});
+		
+		saveButton.addEventListener('click', async () => {
+			const newFact = textarea.value.trim();
+			if (newFact && newFact !== memory.fact) {
+				await memoryManager.deleteMemory(memory.id);
+				await memoryManager.addMemory(newFact, memory.category);
+				new Notice('Memory updated');
+				this.display();
+			}
+		});
 
-			// Show save button when textarea changes
-			textarea.addEventListener('input', () => {
-				const hasChanges = textarea.value.trim() !== memory.fact;
-				saveButton.style.display = hasChanges ? 'inline-block' : 'none';
-			});
+		// Show save button when textarea changes
+		textarea.addEventListener('input', () => {
+			const hasChanges = textarea.value.trim() !== memory.fact;
+			if (hasChanges) {
+				saveButton.removeClass('is-hidden');
+				saveButton.addClass('is-visible');
+			} else {
+				saveButton.removeClass('is-visible');
+				saveButton.addClass('is-hidden');
+			}
+		});
 
 			// Delete button
 			const deleteButton = actionsDiv.createEl('button', {

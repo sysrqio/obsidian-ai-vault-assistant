@@ -121,7 +121,7 @@ describe('Settings', () => {
 		});
 
 		test('should disable shell tools by default', () => {
-			expect(DEFAULT_SETTINGS.enableShellTools).toBe(false);
+			// Shell tools removed from settings
 		});
 
 		test('should disable fallback mode by default', () => {

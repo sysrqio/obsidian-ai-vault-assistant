@@ -16,9 +16,25 @@ export class MockVault {
 		}
 	}
 
+	private createMockFile(path: string): TFile {
+		// Create a proper mock TFile object with all required properties
+		return Object.assign(Object.create(TFile.prototype), {
+			path,
+			name: path.split('/').pop() || '',
+			basename: path.split('/').pop()?.replace(/\.[^/.]+$/, '') || '',
+			extension: path.split('.').pop() || '',
+			stat: { ctime: Date.now(), mtime: Date.now(), size: 0 },
+			vault: this
+		});
+	}
+
 	getAbstractFileByPath(path: string): TFile | TFolder | null {
 		if (this.files.has(path)) {
-			return { path } as TFile;
+			const file = this.createMockFile(path);
+			// Check if it's actually a TFile instance
+			if (file instanceof TFile || Object.getPrototypeOf(file) === TFile.prototype) {
+				return file;
+			}
 		}
 		return null;
 	}
@@ -33,11 +49,11 @@ export class MockVault {
 
 	async create(path: string, content: string): Promise<TFile> {
 		this.files.set(path, content);
-		return { path } as TFile;
+		return this.createMockFile(path);
 	}
 
 	getFiles(): TFile[] {
-		return Array.from(this.files.keys()).map(path => ({ path } as TFile));
+		return Array.from(this.files.keys()).map(path => this.createMockFile(path));
 	}
 
 	getAllLoadedFiles(): TFile[] {
@@ -63,7 +79,6 @@ export const mockSettings = {
 	oauthRefreshToken: '',
 	oauthTokenExpiry: 0,
 	enableFileTools: true,
-	enableShellTools: false,
 	fallbackMode: false,
 	renderMarkdown: true,
 	logLevel: 'error' as const, // Suppress logs in tests
@@ -108,6 +123,10 @@ export class MockVaultAdapter {
 		if (!file) {
 			throw new Error(`File not found: ${filePath}`);
 		}
+		// Use instanceof check to ensure it's a TFile
+		if (!(file instanceof TFile) && !(Object.getPrototypeOf(file) === TFile.prototype)) {
+			throw new Error(`Path is not a file: ${filePath}`);
+		}
 		return await this.vault.read(file as TFile);
 	}
 
@@ -125,6 +144,10 @@ export class MockVaultAdapter {
 	async writeFile(filePath: string, content: string): Promise<void> {
 		const file = this.vault.getAbstractFileByPath(filePath);
 		if (file) {
+			// Use instanceof check to ensure it's a TFile
+			if (!(file instanceof TFile) && !(Object.getPrototypeOf(file) === TFile.prototype)) {
+				throw new Error(`Path is not a file: ${filePath}`);
+			}
 			await this.vault.modify(file as TFile, content);
 		} else {
 			await this.vault.create(filePath, content);

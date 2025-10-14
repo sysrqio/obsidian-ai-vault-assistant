@@ -1,4 +1,5 @@
 import { DataAdapter } from 'obsidian';
+import { Logger } from './utils/logger';
 
 export interface MemoryEntry {
 	id: string;
@@ -29,7 +30,7 @@ export class MemoryManager {
 		try {
 			const exists = await this.adapter.exists(this.memoryFilePath);
 			if (!exists) {
-				console.log('[Memory] No memory file found, starting fresh');
+				Logger.debug('Memory', 'No memory file found, starting fresh');
 				this.memories = [];
 				return;
 			}
@@ -38,13 +39,13 @@ export class MemoryManager {
 			const memoryData: MemoryData = JSON.parse(data);
 			
 			if (memoryData.version !== CURRENT_VERSION) {
-				console.warn('[Memory] Version mismatch, attempting migration...');
+				Logger.warn('Memory', 'Version mismatch, attempting migration...');
 			}
 			
 			this.memories = memoryData.memories || [];
-			console.log('[Memory] Loaded ' + this.memories.length + ' memories');
+			Logger.debug('Memory', 'Loaded ' + this.memories.length + ' memories');
 		} catch (error: any) {
-			console.error('[Memory] Error loading memories:', error);
+			Logger.error('Memory', 'Error loading memories:', error);
 			this.memories = [];
 		}
 	}
@@ -58,9 +59,9 @@ export class MemoryManager {
 			
 			const jsonData = JSON.stringify(memoryData, null, 2);
 			await this.adapter.write(this.memoryFilePath, jsonData);
-			console.log('[Memory] Saved ' + this.memories.length + ' memories');
+			Logger.debug('Memory', 'Saved ' + this.memories.length + ' memories');
 		} catch (error) {
-			console.error('[Memory] Error saving memories:', error);
+			Logger.error('Memory', 'Error saving memories:', error);
 			throw error;
 		}
 	}
@@ -76,7 +77,7 @@ export class MemoryManager {
 		this.memories.push(newMemory);
 		await this.saveMemories();
 		
-		console.log('[Memory] Added new memory: "' + fact + '"');
+		Logger.debug('Memory', 'Added new memory: "' + fact + '"');
 		return newMemory;
 	}
 
@@ -96,7 +97,7 @@ export class MemoryManager {
 	async clearMemories(): Promise<void> {
 		this.memories = [];
 		await this.saveMemories();
-		console.log('[Memory] Cleared all memories');
+		Logger.debug('Memory', 'Cleared all memories');
 	}
 
 	async deleteMemory(id: string): Promise<boolean> {
@@ -105,7 +106,7 @@ export class MemoryManager {
 		
 		if (this.memories.length < initialLength) {
 			await this.saveMemories();
-			console.log('[Memory] Deleted memory: ' + id);
+			Logger.debug('Memory', 'Deleted memory: ' + id);
 			return true;
 		}
 		

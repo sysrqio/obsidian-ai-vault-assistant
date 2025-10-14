@@ -115,18 +115,18 @@ export default class GeminiPlugin extends Plugin {
 
 	async startOAuthFlow(): Promise<void> {
 		try {
-			console.log('[Plugin] Starting OAuth flow...');
+			Logger.debug('Plugin', 'Starting OAuth flow...');
 			
 			const oauthHandler = new OAuthHandler();
 			// Use absolute path by combining vault adapter path with plugin dir
 			const vaultPath = (this.app.vault.adapter as any).basePath;
 			const clientSecretPath = `${vaultPath}/.obsidian/plugins/gemini-assistant/client_secret.json`;
 			
-			console.log('[Plugin] Initializing OAuth handler...');
-			console.log('[Plugin] Client secret path:', clientSecretPath);
+			Logger.debug('Plugin', 'Initializing OAuth handler...');
+			Logger.debug('Plugin', 'Client secret path:', clientSecretPath);
 			await oauthHandler.initialize(clientSecretPath);
 			
-			console.log('[Plugin] Starting desktop OAuth flow (local HTTP server)...');
+			Logger.debug('Plugin', 'Starting desktop OAuth flow (local HTTP server)...');
 			const tokens = await oauthHandler.startOAuthFlow();
 			
 			this.settings.oauthAccessToken = tokens.access_token;
@@ -136,14 +136,14 @@ export default class GeminiPlugin extends Plugin {
 			await this.saveSettings();
 			
 			new Notice('✅ OAuth authentication successful!');
-			console.log('[Plugin] OAuth tokens saved successfully');
+			Logger.debug('Plugin', 'OAuth tokens saved successfully');
 
 			// Reinitialize Gemini client with new tokens
 			await this.geminiClient?.initialize();
 
 		} catch (error) {
 			new Notice('❌ OAuth failed: ' + (error as Error).message);
-			console.error('[Plugin] OAuth error:', error);
+			Logger.error('Plugin', 'OAuth error:', error);
 		}
 	}
 }

@@ -201,9 +201,9 @@ export class DirectGeminiAPIClient {
 		'Authorization': `Bearer ${this.accessToken}`,
 		'Accept': '*/*',
 		'Accept-Encoding': 'gzip,deflate',
-		// Align with gemini-cli headers
-		'User-Agent': 'GeminiCLI/v24.9.0 (darwin; arm64) google-api-nodejs-client/9.15.1',
-		'x-goog-api-client': 'gl-node/24.9.0',
+		// Identify as AI Vault Assistant Obsidian plugin
+		'User-Agent': 'AI-Vault-Assistant/0.1.0 (Obsidian; darwin; arm64)',
+		'x-goog-api-client': 'obsidian-plugin/0.1.0',
 		'Connection': 'close'
 	};
 

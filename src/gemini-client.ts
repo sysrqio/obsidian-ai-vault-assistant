@@ -1023,23 +1023,23 @@ export class GeminiClient {
 		Logger.debug('ReadManyFiles', 'Use default excludes:', useDefaultExcludes);
 
 		try {
-			const vaultFiles = this.vaultAdapter.vault.getFiles();
-			Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
+		const vaultFiles = this.vaultAdapter.vault.getFiles();
+		Logger.debug('ReadManyFiles', 'Total vault files:', vaultFiles.length);
 
-			const defaultExcludes = [
-				'node_modules/**',
-				'.git/**',
-				'.obsidian/**',
-				'*.log',
-				'*.tmp',
-				'*.cache',
-				'*.lock',
-				'*.pid',
-				'*.seed',
-				'*.pid.lock',
-				'.DS_Store',
-				'Thumbs.db'
-			];
+		const defaultExcludes = [
+			'node_modules/**',
+			'.git/**',
+			`${this.app.vault.configDir}/**`, // Use vault's configDir instead of hardcoded .obsidian
+			'*.log',
+			'*.tmp',
+			'*.cache',
+			'*.lock',
+			'*.pid',
+			'*.seed',
+			'*.pid.lock',
+			'.DS_Store',
+			'Thumbs.db'
+		];
 
 			const effectiveExcludes = useDefaultExcludes 
 				? [...defaultExcludes, ...exclude]
@@ -1228,10 +1228,10 @@ export class GeminiClient {
 	}
 
 	async *sendMessage(userMessage: string): AsyncGenerator<StreamChunk> {
-		console.log('═══════════════════════════════════════════════════════════════');
+		Logger.separator('Gemini');
 		Logger.debug('Gemini', '🚀 sendMessage called');
 		Logger.debug('Gemini', 'User message:', userMessage);
-		console.log('═══════════════════════════════════════════════════════════════');
+		Logger.separator('Gemini');
 
 		// Auto-reinitialize if client is not available (fixes inactivity timeout)
 		if (!this.isInitialized()) {
@@ -1336,9 +1336,8 @@ export class GeminiClient {
 					};
 					
 					// 🔍 DEBUG: Log full tool structure
-					Logger.debug('DEBUG', '🛠️  Tools in config:');
-					console.log(JSON.stringify(this.tools, null, 2));
-					Logger.debug('DEBUG', 'Tool count:', this.tools[0]?.functionDeclarations?.length);
+				Logger.debug('DEBUG', '🛠️  Tools in config:', JSON.stringify(this.tools, null, 2));
+				Logger.debug('DEBUG', 'Tool count:', this.tools[0]?.functionDeclarations?.length);
 					Logger.debug('DEBUG', 'First tool:', this.tools[0]?.functionDeclarations?.[0]?.name);
 				}
 				
@@ -1672,8 +1671,8 @@ export class GeminiClient {
 				done: true
 			};
 
-			Logger.debug('Gemini', 'Final conversation history has', this.history.length, 'items');
-			console.log('═══════════════════════════════════════════════════════════════');
+		Logger.debug('Gemini', 'Final conversation history has', this.history.length, 'items');
+		Logger.separator('Gemini');
 
 		} catch (error: any) {
 			Logger.error('Gemini', 'Error in sendMessage:', error);

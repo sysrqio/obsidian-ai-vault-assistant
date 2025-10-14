@@ -171,6 +171,7 @@
 
 /* Message menu dropdown */
 .gemini-message-menu {
+    position: fixed;
     background-color: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 6px;

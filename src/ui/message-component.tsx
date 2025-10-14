@@ -142,16 +142,14 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 			</div>
 			
 			{showMenu && (
-				<div
-					ref={menuRef}
-					className="gemini-message-menu"
-					style={{
-						position: 'fixed',
-						top: menuPosition.top,
-						left: menuPosition.left,
-						zIndex: 1000
-					}}
-				>
+			<div
+				ref={menuRef}
+				className="gemini-message-menu"
+				style={{
+					top: menuPosition.top + 'px',
+					left: menuPosition.left + 'px'
+				}}
+			>
 					<div className="gemini-menu-item" onClick={handleCopyContent}>
 						📋 Copy as text
 					</div>

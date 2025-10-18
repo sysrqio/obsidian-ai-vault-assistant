@@ -48,6 +48,12 @@ export interface ToolPermissions {
 	create_pane: ToolPermission;
 }
 
+export interface ContextSettings {
+	maxVaultStructureItems: number;
+	recentFilesCount: number;
+	recentFilesHours: number;
+}
+
 export interface GeminiSettings {
 	apiKey: string;
 	model: string;
@@ -65,6 +71,7 @@ export interface GeminiSettings {
 	renderMarkdown: boolean;
 	logLevel: LogLevel;
 	toolPermissions: ToolPermissions;
+	contextSettings: ContextSettings;
 }
 
 export const DEFAULT_SETTINGS: GeminiSettings = {
@@ -83,6 +90,11 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	fallbackMode: false,
 	renderMarkdown: true,
 	logLevel: 'warn', // Default to warn for production (only show warnings and errors)
+	contextSettings: {
+		maxVaultStructureItems: 50,
+		recentFilesCount: 10,
+		recentFilesHours: 24
+	},
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -309,6 +321,54 @@ export class GeminiSettingTab extends PluginSettingTab {
 					const num = parseInt(value);
 					if (!isNaN(num) && num > 0) {
 						this.plugin.settings.maxTokens = num;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		// Context Settings
+		containerEl.createEl('h3', { text: 'Context Configuration' });
+		containerEl.createEl('p', { 
+			text: 'All context features are enabled by default to provide the AI with comprehensive vault information.' 
+		});
+
+		new Setting(containerEl)
+			.setName('Max Vault Structure Items')
+			.setDesc('Maximum number of files/folders to include in vault structure (to prevent context overflow)')
+			.addText(text => text
+				.setPlaceholder('50')
+				.setValue(String(this.plugin.settings.contextSettings.maxVaultStructureItems))
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						this.plugin.settings.contextSettings.maxVaultStructureItems = num;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Recent Files Count')
+			.setDesc('Number of recent files to include in context')
+			.addText(text => text
+				.setPlaceholder('10')
+				.setValue(String(this.plugin.settings.contextSettings.recentFilesCount))
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						this.plugin.settings.contextSettings.recentFilesCount = num;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Recent Files Time Window')
+			.setDesc('Hours to look back for recent files')
+			.addText(text => text
+				.setPlaceholder('24')
+				.setValue(String(this.plugin.settings.contextSettings.recentFilesHours))
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						this.plugin.settings.contextSettings.recentFilesHours = num;
 						await this.plugin.saveSettings();
 					}
 				}));

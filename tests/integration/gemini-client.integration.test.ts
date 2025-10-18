@@ -53,6 +53,11 @@ describeOrSkip('GeminiClient Integration Tests', () => {
 			enableFileTools: true,
 			fallbackMode: false,
 			renderMarkdown: true,
+			contextSettings: {
+				maxVaultStructureItems: 50,
+				recentFilesCount: 10,
+				recentFilesHours: 24
+			},
 			toolPermissions: {
 				...mockSettings.toolPermissions,
 				list_files: 'always' as const,  // Auto-approve for testing
@@ -183,6 +188,11 @@ describeOrSkip('GeminiClient Integration Tests', () => {
 			model: 'gemini-2.5-flash',
 			enableFileTools: true,
 			renderMarkdown: true,
+			contextSettings: {
+				maxVaultStructureItems: 50,
+				recentFilesCount: 10,
+				recentFilesHours: 24
+			},
 			toolPermissions: {
 				...mockSettings.toolPermissions,
 				list_files: 'never' as const,  // Block this tool
@@ -226,7 +236,19 @@ describeOrSkip('GeminiClient - Function Calling Verification', () => {
 			apiKey: API_KEY,
 			model: 'gemini-2.5-flash',
 			enableFileTools: true,
-			renderMarkdown: true
+			renderMarkdown: true,
+			contextSettings: {
+				includeVaultStructure: true,
+				includeOpenFiles: true,
+				includeRecentFiles: true,
+				includePluginConfig: true,
+				includeOSInfo: true,
+				includeVaultStats: true,
+				includeTags: true,
+				maxVaultStructureItems: 50,
+				recentFilesCount: 10,
+				recentFilesHours: 24
+			}
 		};
 
 		const client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);

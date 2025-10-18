@@ -1,7 +1,7 @@
 {
   "id": "ai-vault-assistant",
   "name": "AI Vault Assistant",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "0.15.0",
   "description": "Like gemini-cli for your vault — AI-powered assistant with 26 tools for navigation, search, file management, and knowledge organization.",
   "author": "Lukas Kasprowicz",

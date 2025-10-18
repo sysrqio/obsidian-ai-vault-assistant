@@ -82,6 +82,11 @@ export const mockSettings = {
 	fallbackMode: false,
 	renderMarkdown: true,
 	logLevel: 'error' as const, // Suppress logs in tests
+	contextSettings: {
+		maxVaultStructureItems: 50,
+		recentFilesCount: 10,
+		recentFilesHours: 24
+	},
 	toolPermissions: {
 		web_fetch: 'ask' as const,
 		write_file: 'ask' as const,
@@ -182,12 +187,26 @@ export const createMockApp = (vault: MockVault): any => {
 };
 
 /**
+ * Add default context settings to test settings
+ */
+export const addDefaultContextSettings = (settings: any) => {
+	return {
+		...settings,
+		contextSettings: {
+			maxVaultStructureItems: 50,
+			recentFilesCount: 10,
+			recentFilesHours: 24
+		}
+	};
+};
+
+/**
  * Create test GeminiClient with mock app
  */
 export const createTestClient = (settings: any, vault: MockVault, vaultPath: string = '/test/vault') => {
 	const mockVaultAdapter = new MockVaultAdapter(vault);
 	const mockApp = createMockApp(vault);
 	const GeminiClient = require('../src/gemini-client').GeminiClient;
-	return new GeminiClient(settings, mockVaultAdapter, vaultPath, '/test/data', mockApp);
+	return new GeminiClient(addDefaultContextSettings(settings), mockVaultAdapter, vaultPath, '/test/data', mockApp);
 };
 

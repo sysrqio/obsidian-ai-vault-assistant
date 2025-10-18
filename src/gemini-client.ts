@@ -1249,7 +1249,7 @@ export class GeminiClient {
 		Logger.debug('Gemini', 'Using:', usingDirectAPI ? 'Direct API (OAuth)' : 'Google SDK (API Key)');
 		Logger.debug('Gemini', 'Building request...');
 
-		const systemPrompt = this.buildSystemPrompt();
+		const systemPrompt = await this.buildSystemPrompt();
 		Logger.debug('Gemini', 'System prompt length:', systemPrompt.length);
 		Logger.debug('Gemini', 'System prompt preview:', systemPrompt.substring(0, 200) + '...');
 
@@ -1721,21 +1721,245 @@ export class GeminiClient {
 		return directory ? `${directory}/${sanitized}` : sanitized;
 	}
 
-	private buildSystemPrompt(): string {
+	private async buildContext(): Promise<{
+		osInfo: { platform: string; arch: string; nodeVersion: string };
+		vaultStats: { totalFiles: number; totalFolders: number; vaultSize: string };
+		openFiles: string[];
+		recentFiles: string[];
+		pluginConfig: { model: string; temperature: number; maxTokens: number; logLevel: string };
+		vaultStructure: string;
+		tags: string[];
+	}> {
+		const context = this.settings.contextSettings;
+		
+		// OS and Environment Info (always enabled)
+		const osInfo = {
+			platform: process.platform,
+			arch: process.arch,
+			nodeVersion: process.version
+		};
+
+		// Vault Statistics (always enabled)
+		const vaultStats = {
+			totalFiles: this.app.vault.getMarkdownFiles().length,
+			totalFolders: this.app.vault.getAllFolders().length,
+			vaultSize: await this.getVaultSize()
+		};
+
+		// Currently Open Files (always enabled)
+		const openFiles = this.app.workspace.getLeavesOfType('markdown')
+			.map(leaf => (leaf.view as any).file)
+			.filter(file => file && file.path)
+			.map(file => file.path);
+
+		// Recent Files (always enabled)
+		const recentFiles = (await this.vaultTools.getRecentFiles(context.recentFilesCount, context.recentFilesHours))
+			.split('\n')
+			.filter(line => line.includes('**[['))
+			.map(line => {
+				const match = line.match(/\*\*\[\[([^\]]+)\]\]\*\*/);
+				return match ? match[1] : null;
+			})
+			.filter(Boolean) as string[];
+
+		// Plugin Configuration (always enabled)
+		const pluginConfig = {
+			model: this.settings.model,
+			temperature: this.settings.temperature,
+			maxTokens: this.settings.maxTokens,
+			logLevel: this.settings.logLevel
+		};
+
+		// Vault Structure (always enabled, limited to avoid token bloat)
+		const vaultStructure = await this.getVaultStructure(context.maxVaultStructureItems);
+
+		// Tags (always enabled)
+		const tags = await this.getVaultTags();
+
+		return {
+			osInfo,
+			vaultStats,
+			openFiles,
+			recentFiles,
+			pluginConfig,
+			vaultStructure,
+			tags
+		};
+	}
+
+	private async getVaultSize(): Promise<string> {
+		try {
+			// Get approximate vault size by summing file sizes
+			let totalSize = 0;
+			const files = this.app.vault.getFiles();
+			
+			for (const file of files) {
+				const stat = await this.app.vault.adapter.stat(file.path);
+				if (stat && stat.size) {
+					totalSize += stat.size;
+				}
+			}
+			
+			// Convert to human readable format
+			if (totalSize < 1024) return `${totalSize} B`;
+			if (totalSize < 1024 * 1024) return `${(totalSize / 1024).toFixed(1)} KB`;
+			if (totalSize < 1024 * 1024 * 1024) return `${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
+			return `${(totalSize / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+		} catch (error) {
+			Logger.debug('Context', 'Failed to calculate vault size:', error);
+			return 'Unknown';
+		}
+	}
+
+	private async getVaultStructure(maxItems: number = 50): Promise<string> {
+		try {
+			const folders = this.app.vault.getAllFolders();
+			const files = this.app.vault.getMarkdownFiles();
+			
+			// Build a tree structure (limited to avoid token bloat)
+			let structure = '';
+			let itemCount = 0;
+			
+			// Add folders first
+			for (const folder of folders) {
+				if (itemCount >= maxItems) break;
+				if (folder.path === '') continue; // Skip root
+				
+				structure += `📁 ${folder.path}/\n`;
+				itemCount++;
+			}
+			
+			// Add some key files
+			for (const file of files) {
+				if (itemCount >= maxItems) break;
+				
+				// Prioritize important files
+				const isImportant = file.basename.toLowerCase().includes('index') ||
+								   file.basename.toLowerCase().includes('readme') ||
+								   file.basename.toLowerCase().includes('home') ||
+								   file.path.split('/').length <= 2; // Root level files
+				
+				if (isImportant || itemCount < 20) {
+					structure += `📄 ${file.path}\n`;
+					itemCount++;
+				}
+			}
+			
+			if (itemCount >= maxItems) {
+				structure += `\n... and ${files.length + folders.length - itemCount} more items`;
+			}
+			
+			return structure || 'Empty vault';
+		} catch (error) {
+			Logger.debug('Context', 'Failed to build vault structure:', error);
+			return 'Unable to load vault structure';
+		}
+	}
+
+	private async getVaultTags(): Promise<string[]> {
+		try {
+			const files = this.app.vault.getMarkdownFiles();
+			const tagSet = new Set<string>();
+			
+			for (const file of files) {
+				const content = await this.app.vault.read(file);
+				// Extract tags from content (both #tag and [[tag]] formats)
+				const tagMatches = content.match(/#[\w\-/]+/g) || [];
+				const linkMatches = content.match(/\[\[([^\]]+)\]\]/g) || [];
+				
+				tagMatches.forEach(tag => tagSet.add(tag));
+				linkMatches.forEach(link => {
+					const tag = link.replace(/\[\[|\]\]/g, '');
+					if (tag.includes('/')) {
+						// This is a link to a file, not a tag
+						return;
+					}
+					tagSet.add(`#${tag}`);
+				});
+			}
+			
+			// Convert to array and sort
+			return Array.from(tagSet).sort();
+		} catch (error) {
+			Logger.debug('Context', 'Failed to get vault tags:', error);
+			return [];
+		}
+	}
+
+	private async buildSystemPrompt(): Promise<string> {
 		const vaultName = this.vaultPath.split('/').pop() || 'vault';
 		const currentDate = new Date().toISOString().split('T')[0];
+		const currentTime = new Date().toLocaleTimeString();
 		
 		const memoriesText = this.memoryManager.getMemoriesAsText();
+		
+		// Build comprehensive context
+		const context = await this.buildContext();
 
 		let prompt = `You are an interactive assistant specializing in knowledge management and note-taking within Obsidian. Your primary goal is to help users efficiently access and organize their notes, adhering strictly to the following instructions and utilizing your available tools.
 
 # Current Context
 - Vault: ${vaultName}
 - Vault path: ${this.vaultPath}
-- Date: ${currentDate}`;
+- Date: ${currentDate}
+- Time: ${currentTime}`;
+
+		// Add OS info (always enabled)
+		prompt += `
+- Operating System: ${context.osInfo.platform} (${context.osInfo.arch})
+- Node.js Version: ${context.osInfo.nodeVersion}`;
+
+		// Add vault stats (always enabled)
+		prompt += `
+
+# Vault Information
+- Total Files: ${context.vaultStats.totalFiles}
+- Total Folders: ${context.vaultStats.totalFolders}
+- Vault Size: ${context.vaultStats.vaultSize}`;
+
+		// Add open files (always enabled)
+		if (context.openFiles.length > 0) {
+			prompt += `
+
+# Currently Open Files
+${context.openFiles.map(file => `- ${file}`).join('\n')}`;
+		}
+
+		// Add recent files (always enabled)
+		if (context.recentFiles.length > 0) {
+			prompt += `
+
+# Recent Files
+${context.recentFiles.slice(0, 5).map(file => `- ${file}`).join('\n')}`;
+		}
+
+		// Add plugin config (always enabled)
+		prompt += `
+
+# Plugin Configuration
+- Model: ${context.pluginConfig.model}
+- Temperature: ${context.pluginConfig.temperature}
+- Max Tokens: ${context.pluginConfig.maxTokens}
+- Log Level: ${context.pluginConfig.logLevel}`;
+
+		// Add vault structure (always enabled)
+		if (context.vaultStructure) {
+			prompt += `
+
+# Vault Structure
+${context.vaultStructure}`;
+		}
+
+		// Add tags (always enabled)
+		if (context.tags.length > 0) {
+			prompt += `
+
+# Vault Tags
+${context.tags.slice(0, 20).join(', ')}${context.tags.length > 20 ? ` (and ${context.tags.length - 20} more)` : ''}`;
+		}
 
 		if (memoriesText) {
-			prompt += `\n\n${memoriesText}`;
+			prompt += `\n\n# User Memories\n${memoriesText}`;
 		}
 
 		prompt += `

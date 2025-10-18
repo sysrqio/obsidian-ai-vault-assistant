@@ -62,6 +62,11 @@ describeOrSkip('All Tools Integration Tests', () => {
 			enableFileTools: true,
 			fallbackMode: false,
 			renderMarkdown: true,
+			contextSettings: {
+				maxVaultStructureItems: 50,
+				recentFilesCount: 10,
+				recentFilesHours: 24
+			},
 			toolPermissions: {
 				list_files: 'always' as const,
 				read_file: 'always' as const,
@@ -370,6 +375,11 @@ describeOrSkip('All Tools Integration Tests', () => {
 			apiKey: API_KEY,
 			model: 'gemini-2.5-flash',
 			enableFileTools: true,
+			contextSettings: {
+				maxVaultStructureItems: 50,
+				recentFilesCount: 10,
+				recentFilesHours: 24
+			},
 			toolPermissions: {
 				list_files: 'never' as const,
 				read_file: 'always' as const,

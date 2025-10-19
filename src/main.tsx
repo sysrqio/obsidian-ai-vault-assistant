@@ -5,29 +5,66 @@ import { VaultAdapter } from './utils/vault-adapter';
 import { GeminiClient } from './gemini-client';
 import { OAuthHandler } from './oauth-handler';
 import { Logger } from './utils/logger';
+import { McpClientManager } from './mcp/mcp-client-manager';
+import { MCPConfigManager } from './mcp/mcp-config-manager';
+import { ToolRegistry } from './tools/tool-registry';
+import { PromptRegistry } from './prompts/prompt-registry';
 
 export default class GeminiPlugin extends Plugin {
 	settings: GeminiSettings;
 	vaultAdapter: VaultAdapter;
 	geminiClient: GeminiClient | null = null;
+	mcpClientManager: McpClientManager | null = null;
+	mcpConfigManager: MCPConfigManager | null = null;
+	toolRegistry: ToolRegistry | null = null;
+	promptRegistry: PromptRegistry | null = null;
 
 	async onload() {
 		// Wrap console to respect log levels (do this first!)
 		Logger.wrapConsole();
 		
 		Logger.info('Plugin', 'Loading AI Vault Assistant...');
+		Logger.debug('Plugin', '🚀 PLUGIN RELOADED - NEW VERSION WITH DEBUG LOGS');
 		
 		await this.loadSettings();
 
 		this.vaultAdapter = new VaultAdapter(this.app.vault);
 		Logger.debug('Plugin', 'Vault adapter initialized');
 
+		// Initialize tool and prompt registries
+		this.toolRegistry = new ToolRegistry();
+		this.promptRegistry = new PromptRegistry();
+		Logger.debug('Plugin', 'Tool and prompt registries initialized');
+
+		// Initialize MCP config manager
+		this.mcpConfigManager = new MCPConfigManager(this.app.vault);
+		await this.mcpConfigManager.loadConfig();
+		Logger.debug('Plugin', 'MCP config manager initialized');
+
 		const vaultPath = (this.app.vault.adapter as any).basePath || '';
 		const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
 		Logger.debug('Plugin', `Vault path: ${vaultPath}`);
 		Logger.debug('Plugin', `Plugin data path: ${pluginDataPath}`);
-		this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
+
+		// Initialize MCP client manager FIRST if MCP is enabled
+		Logger.debug('Plugin', `MCP enabled in settings: ${this.settings.enableMCP}`);
+		if (this.settings.enableMCP) {
+			Logger.debug('Plugin', 'Initializing MCP client manager...');
+			await this.initializeMcpClientManager();
+			Logger.debug('Plugin', 'MCP client manager initialization completed');
+		} else {
+			Logger.debug('Plugin', 'MCP not enabled, skipping MCP initialization');
+		}
+
+		// Then create Gemini client (so it can access MCP tools)
+		this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app, this);
 		Logger.debug('Plugin', 'Gemini client created');
+
+		// Reload tools in Gemini client to include MCP tools (if MCP was initialized)
+		if (this.settings.enableMCP && this.mcpClientManager) {
+			Logger.debug('Plugin', 'Reloading tools in Gemini client to include MCP tools...');
+			this.geminiClient.reloadTools();
+		}
 
 		this.registerView(
 			VIEW_TYPE_GEMINI,
@@ -54,6 +91,12 @@ export default class GeminiPlugin extends Plugin {
 
 	async onunload() {
 		Logger.info('Plugin', 'Unloading AI Vault Assistant...');
+		
+		// Shutdown MCP client manager
+		if (this.mcpClientManager) {
+			await this.mcpClientManager.disconnectAll();
+			Logger.debug('Plugin', 'MCP client manager shutdown');
+		}
 	}
 
 	async activateView() {
@@ -111,6 +154,17 @@ export default class GeminiPlugin extends Plugin {
 				}
 			});
 		}
+
+		// Reinitialize MCP client manager if MCP settings changed
+		if (this.settings.enableMCP && this.toolRegistry && this.promptRegistry) {
+			if (this.mcpClientManager) {
+				await this.mcpClientManager.disconnectAll();
+			}
+			await this.initializeMcpClientManager();
+		} else if (!this.settings.enableMCP && this.mcpClientManager) {
+			await this.mcpClientManager.disconnectAll();
+			this.mcpClientManager = null;
+		}
 	}
 
 	async startOAuthFlow(): Promise<void> {
@@ -148,4 +202,120 @@ export default class GeminiPlugin extends Plugin {
 			Logger.error('Plugin', 'OAuth error:', error);
 		}
 	}
+
+	async initializeMcpClientManager(): Promise<void> {
+		Logger.debug('Plugin', 'initializeMcpClientManager() called');
+		
+		if (!this.toolRegistry || !this.promptRegistry || !this.mcpConfigManager) {
+			Logger.error('Plugin', 'Tool and prompt registries and MCP config manager must be initialized before MCP client manager');
+			Logger.error('Plugin', `toolRegistry: ${!!this.toolRegistry}, promptRegistry: ${!!this.promptRegistry}, mcpConfigManager: ${!!this.mcpConfigManager}`);
+			return;
+		}
+
+		try {
+			Logger.debug('Plugin', 'Initializing MCP client manager...');
+			
+			// Create a simple workspace context adapter
+			const workspaceContext = {
+				getDirectories: () => [],
+				onDirectoriesChanged: () => {},
+			} as any;
+
+			// Get MCP servers from config manager
+			const mcpServers = this.mcpConfigManager.getServers();
+
+			this.mcpClientManager = new McpClientManager(
+				mcpServers,
+				this.toolRegistry,
+				this.promptRegistry,
+				workspaceContext,
+				this.settings.logLevel === 'debug'
+			);
+
+			// Discover MCP servers
+			await this.mcpClientManager.discoverAll();
+			Logger.info('Plugin', `MCP client manager initialized with ${Object.keys(mcpServers).length} servers`);
+
+			// Register MCP tools in the tool registry
+			await this.registerMcpTools();
+
+			// Reload tools in Gemini client to include MCP tools
+			if (this.geminiClient) {
+				this.geminiClient.reloadTools();
+			}
+		} catch (error) {
+			Logger.error('Plugin', 'Failed to initialize MCP client manager:', error);
+			new Notice('Failed to initialize MCP client manager: ' + (error as Error).message);
+		}
+		
+		Logger.debug('Plugin', 'initializeMcpClientManager() completed');
+	}
+
+	/**
+	 * Register MCP tools in the tool registry
+	 */
+	private async registerMcpTools(): Promise<void> {
+		Logger.debug('Plugin', 'registerMcpTools() called');
+		
+		if (!this.mcpClientManager || !this.toolRegistry) {
+			Logger.warn('Plugin', 'Cannot register MCP tools: missing client manager or tool registry');
+			return;
+		}
+
+		try {
+			// Clear existing MCP tools first
+			const allTools = this.toolRegistry.getAllTools();
+			for (const [toolName, toolEntry] of allTools) {
+				if (toolEntry && typeof (toolEntry as any).invoke === 'function') {
+					// This is likely an MCP tool, remove it
+					this.toolRegistry.unregisterTool(toolName);
+					Logger.debug('Plugin', `Removed existing MCP tool: ${toolName}`);
+				}
+			}
+			
+			// Also clear tools that might have been registered with server prefixes
+			for (const [toolName, toolEntry] of allTools) {
+				if (toolName.includes(':') && toolEntry && typeof (toolEntry as any).invoke === 'function') {
+					this.toolRegistry.unregisterTool(toolName);
+					Logger.debug('Plugin', `Removed existing MCP tool with server prefix: ${toolName}`);
+				}
+			}
+
+			// Get all MCP clients
+			const clients = this.mcpClientManager.getAllClients();
+			let totalRegistered = 0;
+			
+			for (const [serverName, client] of clients) {
+				if (client.getStatus() === 'connected') {
+					// Get tools from this MCP client
+					const tools = client.getTools();
+					
+					for (const [toolName, tool] of tools) {
+						// Use the tool's name property instead of the key to avoid server prefix conflicts
+						const finalToolName = tool.name;
+						
+						// Register the tool in the tool registry
+						// The MCP tool already has the correct structure, so we can register it directly
+						this.toolRegistry.registerTool(finalToolName, tool as any);
+						
+						// Add to tool permissions if not already present
+						if (!(finalToolName in this.settings.toolPermissions)) {
+							this.settings.toolPermissions[finalToolName as keyof typeof this.settings.toolPermissions] = 'ask';
+							Logger.debug('Plugin', `Added MCP tool to permissions: ${finalToolName}`);
+						}
+						
+						totalRegistered++;
+						Logger.debug('Plugin', `Registered MCP tool: ${finalToolName} from server: ${serverName}`);
+					}
+				} else {
+					Logger.debug('Plugin', `Skipping server ${serverName}: status ${client.getStatus()}`);
+				}
+			}
+			
+			Logger.info('Plugin', `Registered ${totalRegistered} MCP tools from ${clients.size} servers`);
+		} catch (error) {
+			Logger.error('Plugin', 'Failed to register MCP tools:', error);
+		}
+	}
+
 }

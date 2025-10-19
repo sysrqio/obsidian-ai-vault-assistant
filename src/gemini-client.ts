@@ -39,6 +39,7 @@ export interface StreamChunk {
 	text: string;
 	done: boolean;
 	toolCalls?: ToolCall[];
+	isFollowUp?: boolean;
 }
 
 export type ToolApprovalHandler = (toolName: string, args: Record<string, any>) => Promise<boolean>;
@@ -56,6 +57,7 @@ export class GeminiClient {
 	private vaultTools: VaultTools;
 	private app: App;
 	private plugin: any = null; // Reference to the plugin instance
+	private functionDeclarations: any[] = []; // Store function declarations for API calls
 
 	constructor(settings: GeminiSettings, vaultAdapter: VaultAdapter, vaultPath: string, pluginDataPath: string, app: App, plugin?: any) {
 		this.settings = settings;
@@ -113,36 +115,38 @@ export class GeminiClient {
 						throw new Error('OAuth token expired and no refresh token available');
 					}
 
-				Logger.debug('Gemini', 'Token expired, refreshing...');
+					Logger.debug('Gemini', 'Token expired, refreshing...');
 				
-				// Check if OAuth credentials are configured
-				if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
-					throw new Error('OAuth Client ID and Client Secret not configured. Please configure them in settings.');
-				}
-				
-				// Initialize OAuth handler and refresh token
-				const oauthHandler = new OAuthHandler();
-				await oauthHandler.initialize(this.settings.oauthClientId, this.settings.oauthClientSecret);
-				
-				const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
-
-					this.settings.oauthAccessToken = newTokens.access_token;
-					if (newTokens.refresh_token) {
-						this.settings.oauthRefreshToken = newTokens.refresh_token;
+					// Check if OAuth credentials are configured
+					if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
+						throw new Error('OAuth Client ID and Client Secret not configured. Please configure them in settings.');
 					}
-					this.settings.oauthExpiresAt = Date.now() / 1000 + newTokens.expires_in;
 					
-					Logger.debug('Gemini', 'Token refreshed successfully');
-					new Notice('OAuth token refreshed');
-				} else {
-					Logger.debug('Gemini', 'Token still valid');
+					// Initialize OAuth handler and refresh token
+					const oauthHandler = new OAuthHandler();
+					await oauthHandler.initialize(this.settings.oauthClientId, this.settings.oauthClientSecret);
+					
+					const newTokens = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
+
+					if (newTokens && newTokens.access_token) {
+						this.settings.oauthAccessToken = newTokens.access_token;
+						if (newTokens.refresh_token) {
+							this.settings.oauthRefreshToken = newTokens.refresh_token;
+						}
+						this.settings.oauthExpiresAt = Date.now() / 1000 + newTokens.expires_in;
+						
+						Logger.debug('Gemini', 'Token refreshed successfully');
+						new Notice('OAuth token refreshed');
+					} else {
+						Logger.debug('Gemini', 'Token still valid');
+					}
 				}
 
 				this.directAPIClient = new DirectGeminiAPIClient(this.settings.oauthAccessToken);
 				this.googleGenAI = null;
 
-				Logger.debug('Gemini', 'Standard Gemini API client initialized with OAuth');
-				Logger.debug('Gemini', 'Using generativelanguage.googleapis.com with direct fetch()');
+				Logger.debug('Gemini', 'Direct Gemini API client initialized with OAuth');
+				Logger.debug('Gemini', 'Using cloudcode-pa.googleapis.com with direct fetch()');
 				Logger.debug('Gemini', '✅ Quota delegation enabled (billing to user account)');
 
 			} else {
@@ -176,9 +180,8 @@ export class GeminiClient {
 				Logger.error('Gemini', 'Failed to load memories:', error);
 			}
 
-			if (this.settings.enableFileTools) {
-				this.initializeTools();
-			}
+			// Always initialize tools (includes MCP tools and built-in tools)
+			this.initializeTools();
 
 			Logger.debug('Gemini', 'Client initialized successfully');
 			
@@ -679,6 +682,7 @@ export class GeminiClient {
 
 		Logger.debug('Gemini', `Final functionDeclarations count: ${functionDeclarations.length}`);
 		this.tools = [{ functionDeclarations }];
+		this.functionDeclarations = functionDeclarations; // Store for API calls
 		Logger.debug('Gemini', 'Tools initialized successfully');
 	}
 
@@ -994,6 +998,7 @@ export class GeminiClient {
 		try {
 			Logger.debug('GoogleSearch', 'Executing search for:', query);
 
+			// This is the second call - direct Google Search with the original query
 			const searchContent: Content = {
 				role: 'user',
 				parts: [{ text: query }]
@@ -1006,7 +1011,8 @@ export class GeminiClient {
 			
 			let response: any;
 			if (this.settings.useOAuth && this.directAPIClient) {
-				response = await this.directAPIClient.generateContentWithGrounding(
+				// For OAuth, use the direct API with the correct endpoint and format
+				response = await this.directAPIClient.generateContentWithGoogleSearch(
 					effectiveModel,
 					[searchContent],
 					query
@@ -1030,11 +1036,20 @@ export class GeminiClient {
 				throw new Error(`Gemini client not initialized. Please check your ${authMethod} configuration in settings and try reloading the plugin.`);
 			}
 
-			const responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-			const groundingMetadata = response?.candidates?.[0]?.groundingMetadata;
+			// Debug the full response structure
+			Logger.debug('GoogleSearch', `🐛 Full response structure:`, JSON.stringify(response, null, 2));
+			
+			// Extract text from the correct path in the response structure
+			const responseText = response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+			const groundingMetadata = response?.response?.candidates?.[0]?.groundingMetadata;
 			const sources = groundingMetadata?.groundingChunks || [];
 
+			Logger.debug('GoogleSearch', `🐛 Response text length: ${responseText.length}`);
+			Logger.debug('GoogleSearch', `🐛 Response text preview: ${responseText.substring(0, 200)}...`);
+			Logger.debug('GoogleSearch', `🐛 Sources count: ${sources.length}`);
+
 			if (!responseText || !responseText.trim()) {
+				Logger.debug('GoogleSearch', '🐛 No response text found, returning error message');
 				return `No search results or information found for query: "${query}"`;
 			}
 
@@ -1279,10 +1294,11 @@ export class GeminiClient {
 	 * Load MCP tools into function declarations
 	 */
 	private loadMcpTools(functionDeclarations: FunctionDeclaration[]): void {
+		Logger.debug('Gemini', '🔧 loadMcpTools() called');
 		Logger.debug('Gemini', `MCP enabled: ${this.settings.enableMCP}`);
 		
 		if (!this.settings.enableMCP) {
-			Logger.debug('Gemini', 'MCP not enabled, skipping MCP tools');
+			Logger.debug('Gemini', '❌ MCP not enabled, skipping MCP tools');
 			return;
 		}
 
@@ -1290,7 +1306,7 @@ export class GeminiClient {
 		Logger.debug('Gemini', `Plugin available: ${!!this.plugin}`);
 		
 		if (!this.plugin) {
-			Logger.debug('Gemini', 'Plugin not available yet, MCP tools will be loaded later via reloadTools()');
+			Logger.debug('Gemini', '❌ Plugin not available yet, MCP tools will be loaded later via reloadTools()');
 			return;
 		}
 
@@ -1301,6 +1317,7 @@ export class GeminiClient {
 			Logger.debug('Gemini', `Found ${mcpTools.size} tools in registry`);
 			Logger.debug('Gemini', `Tool registry keys:`, Array.from(mcpTools.keys()));
 			let mcpToolCount = 0;
+			const processedToolNames = new Set<string>(); // Track processed tool names to avoid duplicates
 			
 			for (const [toolName, toolEntry] of mcpTools) {
 				Logger.debug('Gemini', `Processing tool: ${toolName}`);
@@ -1315,6 +1332,12 @@ export class GeminiClient {
 				}
 				Logger.debug('Gemini', `  - toolEntry keys:`, Object.keys(toolEntry));
 				
+				// Skip if we've already processed this tool name
+				if (processedToolNames.has(toolName)) {
+					Logger.debug('Gemini', `Skipping duplicate tool: ${toolName}`);
+					continue;
+				}
+				
 				// Check if toolEntry itself is the MCP tool (has toGeminiTool method)
 				if (typeof toolEntry.toGeminiTool === 'function') {
 					try {
@@ -1323,6 +1346,7 @@ export class GeminiClient {
 						if (geminiTool.functionDeclarations) {
 							functionDeclarations.push(...geminiTool.functionDeclarations);
 							mcpToolCount++;
+							processedToolNames.add(toolName);
 							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
 						}
 					} catch (error) {
@@ -1337,6 +1361,7 @@ export class GeminiClient {
 						if (geminiTool.functionDeclarations) {
 							functionDeclarations.push(...geminiTool.functionDeclarations);
 							mcpToolCount++;
+							processedToolNames.add(toolName);
 							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
 						}
 					} catch (error) {
@@ -1501,7 +1526,7 @@ export class GeminiClient {
 		Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 		Logger.debug('Gemini', '📤 REQUEST DETAILS:');
 		Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-		Logger.debug('Gemini', 'Endpoint: generativelanguage.googleapis.com');
+		Logger.debug('Gemini', 'Endpoint:', usingDirectAPI ? 'cloudcode-pa.googleapis.com (Direct API)' : 'generativelanguage.googleapis.com (SDK)');
 		Logger.debug('Gemini', 'Model:', effectiveModel);
 		Logger.debug('Gemini', 'Temperature:', this.settings.temperature);
 		Logger.debug('Gemini', 'Max tokens:', this.settings.maxTokens);
@@ -1516,16 +1541,12 @@ export class GeminiClient {
 
 			let stream;
 			if (usingDirectAPI) {
-				// Direct API (OAuth) uses non-streaming generateContent
-				const response = await this.directAPIClient!.generateContent(
+				// Direct API (OAuth) - First call: Tool selection with functionDeclarations
+				const response = await this.directAPIClient!.generateContentWithGrounding(
 					effectiveModel,
 					contents,
-					systemPrompt,
-					this.tools,
-					{
-						temperature: this.settings.temperature,
-						maxOutputTokens: this.settings.maxTokens
-					}
+					userMessage,
+					this.functionDeclarations
 				);
 				
 				// Process Direct API response directly (no streaming needed)
@@ -1547,6 +1568,32 @@ export class GeminiClient {
 									status: 'pending'
 								});
 							}
+						}
+						
+						// Add user message to history first
+						this.history.push({
+							role: 'user',
+							parts: [{ text: userMessage }]
+						});
+						
+						// Add model response to history
+						if (accumulatedText || toolCalls.length > 0) {
+							const modelParts: any[] = [];
+							if (accumulatedText) {
+								modelParts.push({ text: accumulatedText });
+							}
+							for (const toolCall of toolCalls) {
+								modelParts.push({
+									functionCall: {
+										name: toolCall.name,
+										args: toolCall.args
+									}
+								});
+							}
+							this.history.push({
+								role: 'model',
+								parts: modelParts
+							});
 						}
 						
 						// Yield the complete response
@@ -1573,7 +1620,11 @@ export class GeminiClient {
 										}]
 									});
 									
+									// First yield the tool execution info
 									yield { text: '', done: false, toolCalls: [toolCall] };
+									
+									// Then yield the tool result as a separate chat message
+									yield { text: result, done: false, isFollowUp: true };
 								} catch (error) {
 									toolCall.status = 'rejected';
 									toolCall.error = (error as Error).message;
@@ -1581,56 +1632,13 @@ export class GeminiClient {
 								}
 							}
 							
-							// Generate follow-up response after tool execution
-							const followUpResponse = await this.directAPIClient!.generateContent(
-								effectiveModel,
-								this.history,
-								systemPrompt,
-								this.tools,
-								{
-									temperature: this.settings.temperature,
-									maxOutputTokens: this.settings.maxTokens
-								}
-							);
-							
-							if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
-								const followUpCandidate = followUpResponse.candidates[0];
-								if (followUpCandidate.content && followUpCandidate.content.parts) {
-									let followUpText = '';
-									for (const part of followUpCandidate.content.parts) {
-										if (part.text) {
-											followUpText += part.text;
-										}
-									}
-									
-									if (followUpText) {
-										// Add follow-up response to history
-										this.history.push({
-											role: 'model',
-											parts: [{ text: followUpText }]
-										});
-										
-										yield { text: followUpText, done: true };
-									}
-								}
-							}
+							// No follow-up response needed - tool results are rendered directly
 						} else {
-							// No tool calls, just add the response to history
-							this.history.push({
-								role: 'model',
-								parts: [{ text: accumulatedText }]
-							});
-							
+							// No tool calls, just yield the response as done
 							yield { text: accumulatedText, done: true };
 						}
 					}
 				}
-				
-				// Add user message to history
-				this.history.push({
-					role: 'user',
-					parts: [{ text: userMessage }]
-				});
 				
 				return; // Exit early for Direct API
 			} else if (this.googleGenAI) {

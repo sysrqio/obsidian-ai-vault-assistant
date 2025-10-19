@@ -114,8 +114,8 @@ export class GeminiView extends ItemView {
 		try {
 			for await (const chunk of this.geminiClient.sendMessage(message)) {
 				if (chunk.text) {
-					// If we have text and no current message, or if current message already has tool calls, create new message
-					if (!currentMessage || currentMessage.toolCalls) {
+					// If we have text and no current message, or if current message already has tool calls, or if this is a follow-up response, create new message
+					if (!currentMessage || currentMessage.toolCalls || (chunk as any).isFollowUp) {
 						currentMessage = {
 							id: 'assistant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
 							role: 'assistant',

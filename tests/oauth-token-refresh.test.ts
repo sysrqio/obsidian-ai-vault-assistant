@@ -112,9 +112,9 @@ describe('OAuth Token Refresh', () => {
 		expect(mockRefreshToken).toHaveBeenCalledWith('test-refresh-token');
 		
 		// Should update settings with new token
-		expect(client.settings.oauthAccessToken).toBe('new-access-token');
-		expect(client.settings.oauthRefreshToken).toBe('new-refresh-token');
-		expect(client.settings.oauthExpiresAt).toBeGreaterThan(Date.now());
+		expect((client as any).settings.oauthAccessToken).toBe('new-access-token');
+		expect((client as any).settings.oauthRefreshToken).toBe('new-refresh-token');
+		expect((client as any).settings.oauthExpiresAt).toBeGreaterThan(Date.now());
 	});
 
 	test('should refresh token when token expires within 5 minutes', async () => {

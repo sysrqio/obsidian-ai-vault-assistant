@@ -175,6 +175,19 @@ export class McpSettingsTab extends Modal {
               if (this.plugin.mcpConfigManager) {
                 await this.plugin.mcpConfigManager.removeServer(serverName);
                 this.loadServers();
+                
+                // If MCP is enabled, disconnect the server from the client manager
+                if (this.plugin.settings.enableMCP && this.plugin.mcpClientManager) {
+                  try {
+                    await this.plugin.mcpClientManager.disconnectAll();
+                    await this.plugin.mcpClientManager.discoverAll();
+                    new Notice(`✅ MCP server "${serverName}" removed and disconnected`);
+                  } catch (error) {
+                    console.error('Failed to disconnect MCP server:', error);
+                    new Notice(`⚠️ MCP server "${serverName}" removed but disconnection failed`);
+                  }
+                }
+                
                 this.onOpen(); // Refresh the modal
               }
             }
@@ -248,6 +261,18 @@ export class McpSettingsTab extends Modal {
     if (this.plugin.mcpConfigManager) {
       await this.plugin.mcpConfigManager.setServer(serverName, config);
       this.loadServers();
+      
+      // If MCP is enabled, reconnect the client manager to discover the new server
+      if (this.plugin.settings.enableMCP && this.plugin.mcpClientManager) {
+        try {
+          await this.plugin.mcpClientManager.discoverAll();
+          new Notice(`✅ MCP server "${serverName}" added and connected successfully`);
+        } catch (error) {
+          console.error('Failed to connect new MCP server:', error);
+          new Notice(`⚠️ MCP server "${serverName}" added but connection failed. Try refreshing the status.`);
+        }
+      }
+      
       this.onOpen(); // Refresh the modal
     }
   }

@@ -86,13 +86,11 @@ export default class GeminiPlugin extends Plugin {
 
 		this.addSettingTab(new GeminiSettingTab(this.app, this));
 
-		// Restore view on startup if enabled
-		if (this.settings.restoreViewOnStartup) {
-			// Use setTimeout to ensure the workspace is fully loaded
-			setTimeout(() => {
-				this.restoreViewOnStartup();
-			}, 1000);
-		}
+		// Always restore view on startup
+		// Use setTimeout to ensure the workspace is fully loaded
+		setTimeout(() => {
+			this.restoreViewOnStartup();
+		}, 1000);
 
 		Logger.info('Plugin', 'AI Vault Assistant loaded successfully');
 	}

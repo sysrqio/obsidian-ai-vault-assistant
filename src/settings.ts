@@ -81,7 +81,6 @@ export interface GeminiSettings {
 	enableMCP?: boolean;
 	// View Configuration
 	viewPosition?: 'left' | 'right' | 'tab';
-	restoreViewOnStartup?: boolean;
 }
 
 export const DEFAULT_SETTINGS: GeminiSettings = {
@@ -109,7 +108,6 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	enableMCP: true,
 	// View Configuration
 	viewPosition: 'right',
-	restoreViewOnStartup: true,
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -528,31 +526,6 @@ export class GeminiSettingTab extends PluginSettingTab {
 				}));
 	}
 
-	// View Configuration Section
-	containerEl.createEl('h3', { text: 'View Configuration' });
-	
-	new Setting(containerEl)
-		.setName('Restore View on Startup')
-		.setDesc('Automatically restore the chat view to its last position when Obsidian starts')
-		.addToggle(toggle => toggle
-			.setValue(this.plugin.settings.restoreViewOnStartup ?? true)
-			.onChange(async (value) => {
-				this.plugin.settings.restoreViewOnStartup = value;
-				await this.plugin.saveSettings();
-			}));
-
-	new Setting(containerEl)
-		.setName('Default View Position')
-		.setDesc('Where to open the chat view by default')
-		.addDropdown(dropdown => dropdown
-			.addOption('right', 'Right Sidebar')
-			.addOption('left', 'Left Sidebar')
-			.addOption('tab', 'New Tab')
-			.setValue(this.plugin.settings.viewPosition ?? 'right')
-			.onChange(async (value) => {
-				this.plugin.settings.viewPosition = value as 'left' | 'right' | 'tab';
-				await this.plugin.saveSettings();
-			}));
 
 	// Memories Section
 	this.displayMemoriesSection(containerEl);

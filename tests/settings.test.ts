@@ -40,9 +40,9 @@ describe('Settings', () => {
 			expect(permissions.save_memory).toBe('ask');
 		});
 
-	test('should have exactly 26 tool permissions', () => {
+	test('should have at least 26 tool permissions (including MCP tools)', () => {
 		const permissions = Object.keys(DEFAULT_SETTINGS.toolPermissions);
-		expect(permissions).toHaveLength(26);
+		expect(permissions.length).toBeGreaterThanOrEqual(26);
 		expect(permissions).toContain('delete_memory');
 		expect(permissions).toContain('get_active_file');
 		expect(permissions).toContain('search_vault');

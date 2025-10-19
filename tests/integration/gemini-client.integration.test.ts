@@ -277,3 +277,148 @@ describeOrSkip('GeminiClient - Function Calling Verification', () => {
 	});
 });
 
+describeOrSkip('GeminiClient OAuth Integration Tests', () => {
+	let client: GeminiClient;
+	let vault: MockVault;
+	let vaultAdapter: MockVaultAdapter;
+	let testDir: string;
+
+	// Skip OAuth tests if no OAuth credentials are available
+	const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || '';
+	const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || '';
+	const OAUTH_ACCESS_TOKEN = process.env.OAUTH_ACCESS_TOKEN || '';
+	const OAUTH_REFRESH_TOKEN = process.env.OAUTH_REFRESH_TOKEN || '';
+	const SKIP_OAUTH_TESTS = !OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_ACCESS_TOKEN || !OAUTH_REFRESH_TOKEN || process.env.SKIP_OAUTH_TESTS === 'true';
+
+	const describeOAuthOrSkip = SKIP_OAUTH_TESTS ? describe.skip : describe;
+
+	describeOAuthOrSkip('OAuth Token Refresh Integration', () => {
+		beforeAll(async () => {
+			// Create temp directory for memory storage
+			testDir = `/tmp/oauth-integration-test-${Date.now()}`;
+			await fs.mkdir(testDir, { recursive: true });
+		});
+
+		afterAll(async () => {
+			// Cleanup
+			try {
+				await fs.rm(testDir, { recursive: true, force: true });
+			} catch (e) {
+				// Ignore cleanup errors
+			}
+		});
+
+		beforeEach(async () => {
+			// Create mock vault
+			vault = new MockVault({
+				'test.md': '# Test OAuth'
+			});
+			vaultAdapter = new MockVaultAdapter(vault);
+			
+			// Create client with OAuth settings
+			const settings = {
+				...mockSettings,
+				useOAuth: true,
+				oauthClientId: OAUTH_CLIENT_ID,
+				oauthClientSecret: OAUTH_CLIENT_SECRET,
+				oauthAccessToken: OAUTH_ACCESS_TOKEN,
+				oauthRefreshToken: OAUTH_REFRESH_TOKEN,
+				oauthExpiresAt: Date.now() + 3600000, // 1 hour from now
+				apiKey: '', // No API key when using OAuth
+				model: 'gemini-2.5-flash',
+				enableFileTools: false, // Disable tools for OAuth tests
+				fallbackMode: false,
+				renderMarkdown: true
+			};
+
+			client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);
+			await client.initialize();
+		});
+
+		test('should handle OAuth authentication successfully', async () => {
+			console.log('\n🧪 Testing: OAuth authentication\n');
+			
+			const responses: string[] = [];
+			let hasError = false;
+			
+			try {
+				const generator = client.sendMessage('Hello, this is a test message');
+				
+				for await (const response of generator) {
+					if (response.text) {
+						responses.push(response.text);
+					}
+				}
+				
+				// Should receive a response without authentication errors
+				expect(responses.length).toBeGreaterThan(0);
+				const fullResponse = responses.join('');
+				expect(fullResponse.length).toBeGreaterThan(0);
+				
+				console.log('✅ OAuth authentication successful');
+				console.log('📝 AI response:', fullResponse.substring(0, 200) + '...');
+				
+			} catch (error) {
+				hasError = true;
+				console.error('❌ OAuth authentication failed:', error);
+				throw error;
+			}
+			
+			expect(hasError).toBe(false);
+			
+		}, 30000);
+
+		test('should refresh token when expired', async () => {
+			console.log('\n🧪 Testing: OAuth token refresh\n');
+			
+			// Create client with expired token
+			const expiredSettings = {
+				...mockSettings,
+				useOAuth: true,
+				oauthClientId: OAUTH_CLIENT_ID,
+				oauthClientSecret: OAUTH_CLIENT_SECRET,
+				oauthAccessToken: OAUTH_ACCESS_TOKEN,
+				oauthRefreshToken: OAUTH_REFRESH_TOKEN,
+				oauthExpiresAt: Date.now() - 3600000, // 1 hour ago (expired)
+				apiKey: '',
+				model: 'gemini-2.5-flash',
+				enableFileTools: false,
+				fallbackMode: false,
+				renderMarkdown: true
+			};
+
+			const expiredClient = new GeminiClient(expiredSettings, vaultAdapter as any, '/test-vault', testDir, {} as any);
+			await expiredClient.initialize();
+			
+			const responses: string[] = [];
+			let hasError = false;
+			
+			try {
+				const generator = expiredClient.sendMessage('Test message with expired token');
+				
+				for await (const response of generator) {
+					if (response.text) {
+						responses.push(response.text);
+					}
+				}
+				
+				// Should receive a response after token refresh
+				expect(responses.length).toBeGreaterThan(0);
+				const fullResponse = responses.join('');
+				expect(fullResponse.length).toBeGreaterThan(0);
+				
+				console.log('✅ Token refresh successful');
+				console.log('📝 AI response:', fullResponse.substring(0, 200) + '...');
+				
+			} catch (error) {
+				hasError = true;
+				console.error('❌ Token refresh failed:', error);
+				throw error;
+			}
+			
+			expect(hasError).toBe(false);
+			
+		}, 30000);
+	});
+});
+

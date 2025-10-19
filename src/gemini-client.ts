@@ -1372,6 +1372,67 @@ export class GeminiClient {
 		return text.match(urlRegex) || [];
 	}
 
+	/**
+	 * Ensure OAuth token is valid and refresh if necessary
+	 */
+	private async ensureValidOAuthToken(): Promise<void> {
+		if (!this.settings.useOAuth) {
+			return;
+		}
+
+		Logger.debug('Gemini', 'Checking OAuth token validity...');
+		
+		// Check if token is expired or will expire soon (within 5 minutes)
+		const now = Date.now();
+		const expiresAt = this.settings.oauthExpiresAt;
+		const fiveMinutesFromNow = now + (5 * 60 * 1000);
+		
+		if (!expiresAt || expiresAt <= fiveMinutesFromNow) {
+			Logger.debug('Gemini', 'OAuth token expired or expiring soon, refreshing...');
+			
+			if (!this.settings.oauthRefreshToken) {
+				throw new Error('OAuth token expired and no refresh token available. Please re-authenticate in settings.');
+			}
+
+			if (!this.settings.oauthClientId || !this.settings.oauthClientSecret) {
+				throw new Error('OAuth Client ID and Client Secret not configured. Please configure them in settings.');
+			}
+
+			try {
+				const oauthHandler = new OAuthHandler();
+				// Initialize OAuth handler with credentials
+				await oauthHandler.initialize(
+					this.settings.oauthClientId,
+					this.settings.oauthClientSecret
+				);
+				const tokenData = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
+
+				if (tokenData && tokenData.access_token) {
+					// Update settings with new token data
+					this.settings.oauthAccessToken = tokenData.access_token;
+					if (tokenData.refresh_token) {
+						this.settings.oauthRefreshToken = tokenData.refresh_token;
+					}
+					this.settings.oauthExpiresAt = Date.now() + (tokenData.expires_in * 1000);
+
+					Logger.debug('Gemini', 'OAuth token refreshed successfully');
+					// Update the direct API client with new token
+					if (this.directAPIClient) {
+						this.directAPIClient.updateAccessToken(this.settings.oauthAccessToken);
+					}
+				} else {
+					Logger.debug('Gemini', 'OAuth token refresh failed');
+					throw new Error('Failed to refresh OAuth token. Please re-authenticate in settings.');
+				}
+			} catch (error) {
+				Logger.error('Gemini', 'OAuth token refresh error:', error);
+				throw new Error('OAuth token refresh failed: ' + (error as Error).message);
+			}
+		} else {
+			Logger.debug('Gemini', 'OAuth token is still valid');
+		}
+	}
+
 	async *sendMessage(userMessage: string): AsyncGenerator<StreamChunk> {
 		Logger.separator('Gemini');
 		Logger.debug('Gemini', '🚀 sendMessage called');
@@ -1388,6 +1449,11 @@ export class GeminiClient {
 				Logger.error('Gemini', 'Auto-reinitialization failed:', error);
 				throw new Error('Failed to initialize Gemini client: ' + (error as Error).message);
 			}
+		}
+
+		// Ensure OAuth token is fresh before making API calls
+		if (this.settings.useOAuth) {
+			await this.ensureValidOAuthToken();
 		}
 
 		const usingDirectAPI = this.settings.useOAuth && this.directAPIClient;

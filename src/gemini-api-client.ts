@@ -20,6 +20,14 @@ export class DirectGeminiAPIClient {
 	}
 
 	/**
+	 * Update the access token (used when token is refreshed)
+	 */
+	updateAccessToken(newAccessToken: string): void {
+		this.accessToken = newAccessToken;
+		Logger.debug('DirectAPI', 'Access token updated');
+	}
+
+	/**
 	 * Generate UUID for session and prompt tracking
 	 */
 	private generateUUID(): string {

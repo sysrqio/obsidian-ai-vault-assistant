@@ -48,6 +48,16 @@ export class GeminiView extends ItemView {
 
 		this.root = ReactDOM.createRoot(container);
 		this.render();
+
+		// Save initial position
+		await this.saveCurrentPosition();
+
+		// Listen for leaf changes to save position when moved
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => {
+				this.saveCurrentPosition();
+			})
+		);
 	}
 
 	async onClose() {
@@ -381,5 +391,16 @@ export class GeminiView extends ItemView {
 		this.messages = [];
 		this.geminiClient.clearHistory();
 		this.render();
+	}
+
+	/**
+	 * Save the current position of this view
+	 */
+	private async saveCurrentPosition(): Promise<void> {
+		try {
+			await (this.plugin as any).saveViewPosition(this.leaf);
+		} catch (error) {
+			Logger.error('View', 'Failed to save view position:', error);
+		}
 	}
 }

@@ -1400,6 +1400,11 @@ export class GeminiClient {
 
 			try {
 				const oauthHandler = new OAuthHandler();
+				// Initialize OAuth handler with credentials
+				await oauthHandler.initialize(
+					this.settings.oauthClientId,
+					this.settings.oauthClientSecret
+				);
 				const tokenData = await oauthHandler.refreshToken(this.settings.oauthRefreshToken);
 
 				if (tokenData && tokenData.access_token) {

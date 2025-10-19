@@ -1,0 +1,21 @@
+{
+  "servers": {
+    "freelancermap": {
+      "command": "node",
+      "args": [
+        "/Users/l.kasprowicz/.cursor/worktrees/FreelancermapMCP/1760799706471-5f3e59/dist/index.js"
+      ],
+      "env": {},
+      "cwd": null,
+      "url": null,
+      "httpUrl": null,
+      "headers": {},
+      "timeout": 30000,
+      "trust": "ask",
+      "description": "",
+      "oauth": null
+    }
+  },
+  "version": "1.0.0",
+  "lastUpdated": 1760861632253
+}

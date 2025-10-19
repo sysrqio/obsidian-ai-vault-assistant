@@ -55,12 +55,14 @@ export class GeminiClient {
 	private memoryManager: MemoryManager;
 	private vaultTools: VaultTools;
 	private app: App;
+	private plugin: any = null; // Reference to the plugin instance
 
-	constructor(settings: GeminiSettings, vaultAdapter: VaultAdapter, vaultPath: string, pluginDataPath: string, app: App) {
+	constructor(settings: GeminiSettings, vaultAdapter: VaultAdapter, vaultPath: string, pluginDataPath: string, app: App, plugin?: any) {
 		this.settings = settings;
 		this.vaultAdapter = vaultAdapter;
 		this.vaultPath = vaultPath;
 		this.app = app;
+		this.plugin = plugin; // Store plugin reference
 		this.memoryManager = new MemoryManager(vaultAdapter.vault.adapter, pluginDataPath);
 		this.vaultTools = new VaultTools(app, vaultAdapter);
 	}
@@ -196,7 +198,13 @@ export class GeminiClient {
 	}
 
 	private initializeTools(): void {
+		Logger.debug('Gemini', 'initializeTools() called');
 		const functionDeclarations: FunctionDeclaration[] = [];
+
+		// Load MCP tools if available
+		Logger.debug('Gemini', 'Loading MCP tools...');
+		this.loadMcpTools(functionDeclarations);
+		Logger.debug('Gemini', `MCP tools loaded, total functionDeclarations so far: ${functionDeclarations.length}`);
 
 		functionDeclarations.push({
 			name: 'read_file',
@@ -669,12 +677,57 @@ export class GeminiClient {
 			}
 		});
 
+		Logger.debug('Gemini', `Final functionDeclarations count: ${functionDeclarations.length}`);
 		this.tools = [{ functionDeclarations }];
+		Logger.debug('Gemini', 'Tools initialized successfully');
 	}
 
 	private async executeTool(name: string, args: Record<string, any>): Promise<string> {
 		try {
 			Logger.info('Tools', `Executing tool: ${name}`, args);
+
+		// Check if this is an MCP tool
+		if (this.settings.enableMCP && this.plugin) {
+			if (this.plugin.toolRegistry) {
+				const mcpTools = this.plugin.toolRegistry.getAllTools();
+				Logger.debug('Tools', `Looking for MCP tool: ${name}`);
+				Logger.debug('Tools', `Available MCP tools:`, Array.from(mcpTools.keys()));
+				
+				if (mcpTools.has(name)) {
+					const toolEntry = mcpTools.get(name);
+					Logger.debug('Tools', `Found MCP tool entry:`, toolEntry);
+					
+					// Check if toolEntry itself is the MCP tool (has execute method)
+					if (toolEntry && typeof toolEntry.execute === 'function') {
+						Logger.debug('Tools', `Executing MCP tool: ${name}`);
+						
+						// Get the MCP client for this tool
+						const mcpClient = this.plugin.mcpClientManager.getClient(toolEntry.serverName);
+						if (!mcpClient) {
+							throw new Error(`MCP client for server ${toolEntry.serverName} not found`);
+						}
+						
+						const result = await toolEntry.execute(args, mcpClient);
+						return result;
+					}
+					// Also check the old structure for compatibility
+					else if (toolEntry && toolEntry.tool && typeof toolEntry.tool.execute === 'function') {
+						Logger.debug('Tools', `Executing MCP tool: ${name}`);
+						
+						// Get the MCP client for this tool
+						const mcpClient = this.plugin.mcpClientManager.getClient(toolEntry.tool.serverName);
+						if (!mcpClient) {
+							throw new Error(`MCP client for server ${toolEntry.tool.serverName} not found`);
+						}
+						
+						const result = await toolEntry.tool.execute(args, mcpClient);
+						return result;
+					}
+				} else {
+					Logger.debug('Tools', `MCP tool not found: ${name}`);
+				}
+			}
+		}
 
 			switch (name) {
 				case 'read_file':
@@ -1222,6 +1275,98 @@ export class GeminiClient {
 		return this.memoryManager;
 	}
 
+	/**
+	 * Load MCP tools into function declarations
+	 */
+	private loadMcpTools(functionDeclarations: FunctionDeclaration[]): void {
+		Logger.debug('Gemini', `MCP enabled: ${this.settings.enableMCP}`);
+		
+		if (!this.settings.enableMCP) {
+			Logger.debug('Gemini', 'MCP not enabled, skipping MCP tools');
+			return;
+		}
+
+		// Use the plugin reference passed to constructor
+		Logger.debug('Gemini', `Plugin available: ${!!this.plugin}`);
+		
+		if (!this.plugin) {
+			Logger.debug('Gemini', 'Plugin not available yet, MCP tools will be loaded later via reloadTools()');
+			return;
+		}
+
+		Logger.debug('Gemini', `Tool registry available: ${!!this.plugin.toolRegistry}`);
+		
+		if (this.plugin.toolRegistry) {
+			const mcpTools = this.plugin.toolRegistry.getAllTools();
+			Logger.debug('Gemini', `Found ${mcpTools.size} tools in registry`);
+			Logger.debug('Gemini', `Tool registry keys:`, Array.from(mcpTools.keys()));
+			let mcpToolCount = 0;
+			
+			for (const [toolName, toolEntry] of mcpTools) {
+				Logger.debug('Gemini', `Processing tool: ${toolName}`);
+				Logger.debug('Gemini', `  - toolEntry:`, toolEntry);
+				Logger.debug('Gemini', `  - toolEntry.tool:`, toolEntry.tool);
+				Logger.debug('Gemini', `  - has tool: ${!!toolEntry.tool}`);
+				Logger.debug('Gemini', `  - has toGeminiTool: ${!!(toolEntry.tool && typeof toolEntry.tool.toGeminiTool === 'function')}`);
+				Logger.debug('Gemini', `  - toolEntry.tool type:`, typeof toolEntry.tool);
+				Logger.debug('Gemini', `  - toolEntry itself has toGeminiTool: ${typeof toolEntry.toGeminiTool === 'function'}`);
+				if (toolEntry.tool) {
+					Logger.debug('Gemini', `  - toolEntry.tool keys:`, Object.keys(toolEntry.tool));
+				}
+				Logger.debug('Gemini', `  - toolEntry keys:`, Object.keys(toolEntry));
+				
+				// Check if toolEntry itself is the MCP tool (has toGeminiTool method)
+				if (typeof toolEntry.toGeminiTool === 'function') {
+					try {
+						const geminiTool = toolEntry.toGeminiTool();
+						Logger.debug('Gemini', `Converted tool ${toolName}:`, geminiTool);
+						if (geminiTool.functionDeclarations) {
+							functionDeclarations.push(...geminiTool.functionDeclarations);
+							mcpToolCount++;
+							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
+						}
+					} catch (error) {
+						Logger.error('Gemini', `Failed to convert MCP tool ${toolName}:`, error);
+					}
+				}
+				// Also check the old structure for compatibility
+				else if (toolEntry.tool && typeof toolEntry.tool.toGeminiTool === 'function') {
+					try {
+						const geminiTool = toolEntry.tool.toGeminiTool();
+						Logger.debug('Gemini', `Converted tool ${toolName}:`, geminiTool);
+						if (geminiTool.functionDeclarations) {
+							functionDeclarations.push(...geminiTool.functionDeclarations);
+							mcpToolCount++;
+							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
+						}
+					} catch (error) {
+						Logger.error('Gemini', `Failed to convert MCP tool ${toolName}:`, error);
+					}
+				}
+			}
+			
+			Logger.info('Gemini', `Loaded ${mcpToolCount} MCP tools from tool registry`);
+		} else {
+			Logger.warn('Gemini', 'MCP enabled but tool registry not available');
+		}
+	}
+
+	/**
+	 * Reload tools (useful when MCP servers connect/disconnect)
+	 */
+	public reloadTools(): void {
+		Logger.debug('Gemini', 'reloadTools() called');
+		Logger.debug('Gemini', `enableFileTools: ${this.settings.enableFileTools}`);
+		
+		if (this.settings.enableFileTools) {
+			Logger.debug('Gemini', 'Initializing tools...');
+			this.initializeTools();
+			Logger.info('Gemini', 'Tools reloaded');
+		} else {
+			Logger.warn('Gemini', 'File tools not enabled, skipping tool reload');
+		}
+	}
+
 	private extractUrls(text: string): string[] {
 		const urlRegex = /(https?:\/\/[^\s]+)/g;
 		return text.match(urlRegex) || [];
@@ -1475,7 +1620,7 @@ export class GeminiClient {
 					for (const toolCall of currentToolCalls) {
 						Logger.debug('Gemini', '🔧 Follow-up tool call:', toolCall.name);
 
-						// Check tool permission
+						// Check tool permission (works for both normal tools and MCP tools)
 						const toolPermission = this.settings.toolPermissions[toolCall.name as keyof typeof this.settings.toolPermissions];
 						
 						Logger.debug('Gemini', 'Tool permission:', toolPermission);

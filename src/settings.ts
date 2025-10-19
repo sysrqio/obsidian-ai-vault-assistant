@@ -1,6 +1,8 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type GeminiPlugin from './main';
 import { Logger, LogLevel } from './utils/logger';
+import type { MCPServerConfig, MCPOAuthConfig } from './types/mcp-types';
+import { McpSettingsTab } from './settings/mcp-settings-tab';
 
 export type ToolPermission = 'ask' | 'always' | 'never';
 
@@ -12,6 +14,9 @@ export interface ToolPermissions {
 	list_files: ToolPermission;
 	read_many_files: ToolPermission;
 	google_web_search: ToolPermission;
+	
+	// MCP tools (dynamic - can be any tool name)
+	[key: string]: ToolPermission;
 	
 	// Memory tools
 	save_memory: ToolPermission;
@@ -72,6 +77,8 @@ export interface GeminiSettings {
 	logLevel: LogLevel;
 	toolPermissions: ToolPermissions;
 	contextSettings: ContextSettings;
+	// MCP Configuration
+	enableMCP?: boolean;
 }
 
 export const DEFAULT_SETTINGS: GeminiSettings = {
@@ -95,6 +102,8 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 		recentFilesCount: 10,
 		recentFilesHours: 24
 	},
+	// MCP Configuration
+	enableMCP: true,
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -103,6 +112,9 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 		list_files: 'ask',
 		read_many_files: 'ask',
 		google_web_search: 'ask',
+		
+		// MCP tools
+		search_freelancermap_projects: 'ask',
 		
 		// Memory tools
 		save_memory: 'ask',
@@ -483,6 +495,32 @@ export class GeminiSettingTab extends PluginSettingTab {
 				this.plugin.settings.toolPermissions.save_memory = value;
 				await this.plugin.saveSettings();
 			}));
+
+	// MCP Settings Section
+	containerEl.createEl('h3', { text: 'MCP (Model Context Protocol)' });
+	
+	new Setting(containerEl)
+		.setName('Enable MCP Support')
+		.setDesc('Enable Model Context Protocol support to connect to external MCP servers')
+		.addToggle(toggle => toggle
+			.setValue(this.plugin.settings.enableMCP || false)
+			.onChange(async (value) => {
+				this.plugin.settings.enableMCP = value;
+				await this.plugin.saveSettings();
+				this.display(); // Refresh to show/hide MCP settings
+			}));
+
+	if (this.plugin.settings.enableMCP) {
+		new Setting(containerEl)
+			.setName('Configure MCP Servers')
+			.setDesc('Open MCP server configuration dialog')
+			.addButton(button => button
+				.setButtonText('Open MCP Settings')
+				.setCta()
+				.onClick(() => {
+					new McpSettingsTab(this.app, this.plugin).open();
+				}));
+	}
 
 	// Memories Section
 	this.displayMemoriesSection(containerEl);

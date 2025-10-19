@@ -1527,10 +1527,112 @@ export class GeminiClient {
 						maxOutputTokens: this.settings.maxTokens
 					}
 				);
-				// Wrap in array to match SDK stream format
-				stream = (async function*() {
-					yield { candidates: response.candidates, usageMetadata: response.usageMetadata };
-				})();
+				
+				// Process Direct API response directly (no streaming needed)
+				Logger.debug('Gemini', 'Processing Direct API response directly...');
+				
+				if (response.candidates && response.candidates.length > 0) {
+					const candidate = response.candidates[0];
+					if (candidate.content && candidate.content.parts) {
+						let accumulatedText = '';
+						const toolCalls: ToolCall[] = [];
+						
+						for (const part of candidate.content.parts) {
+							if (part.text) {
+								accumulatedText += part.text;
+							} else if (part.functionCall) {
+								toolCalls.push({
+									name: part.functionCall.name,
+									args: part.functionCall.args,
+									status: 'pending'
+								});
+							}
+						}
+						
+						// Yield the complete response
+						if (accumulatedText) {
+							yield { text: accumulatedText, done: false, toolCalls: toolCalls.length > 0 ? toolCalls : undefined };
+						}
+						
+						// Process tool calls if any
+						if (toolCalls.length > 0) {
+							for (const toolCall of toolCalls) {
+								try {
+									const result = await this.executeTool(toolCall.name, toolCall.args);
+									toolCall.status = 'executed';
+									toolCall.result = result;
+									
+									// Add tool response to history as USER message (following gemini-cli pattern)
+									this.history.push({
+										role: 'user',
+										parts: [{ 
+											functionResponse: {
+												name: toolCall.name,
+												response: { result: result }
+											}
+										}]
+									});
+									
+									yield { text: '', done: false, toolCalls: [toolCall] };
+								} catch (error) {
+									toolCall.status = 'rejected';
+									toolCall.error = (error as Error).message;
+									yield { text: '', done: false, toolCalls: [toolCall] };
+								}
+							}
+							
+							// Generate follow-up response after tool execution
+							const followUpResponse = await this.directAPIClient!.generateContent(
+								effectiveModel,
+								this.history,
+								systemPrompt,
+								this.tools,
+								{
+									temperature: this.settings.temperature,
+									maxOutputTokens: this.settings.maxTokens
+								}
+							);
+							
+							if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
+								const followUpCandidate = followUpResponse.candidates[0];
+								if (followUpCandidate.content && followUpCandidate.content.parts) {
+									let followUpText = '';
+									for (const part of followUpCandidate.content.parts) {
+										if (part.text) {
+											followUpText += part.text;
+										}
+									}
+									
+									if (followUpText) {
+										// Add follow-up response to history
+										this.history.push({
+											role: 'model',
+											parts: [{ text: followUpText }]
+										});
+										
+										yield { text: followUpText, done: true };
+									}
+								}
+							}
+						} else {
+							// No tool calls, just add the response to history
+							this.history.push({
+								role: 'model',
+								parts: [{ text: accumulatedText }]
+							});
+							
+							yield { text: accumulatedText, done: true };
+						}
+					}
+				}
+				
+				// Add user message to history
+				this.history.push({
+					role: 'user',
+					parts: [{ text: userMessage }]
+				});
+				
+				return; // Exit early for Direct API
 			} else if (this.googleGenAI) {
 				// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 				const config: any = {
@@ -1788,10 +1890,30 @@ export class GeminiClient {
 								maxOutputTokens: this.settings.maxTokens
 							}
 						);
-						// Wrap in async generator to match SDK stream format
-						followUpStream = (async function*() {
-							yield { candidates: followUpResponse.candidates, usageMetadata: followUpResponse.usageMetadata };
-						})();
+						
+						// Process Direct API follow-up response directly
+						if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
+							const candidate = followUpResponse.candidates[0];
+							if (candidate.content && candidate.content.parts) {
+								let followUpText = '';
+								for (const part of candidate.content.parts) {
+									if (part.text) {
+										followUpText += part.text;
+									}
+								}
+								
+								if (followUpText) {
+									// Add follow-up response to history
+									this.history.push({
+										role: 'model',
+										parts: [{ text: followUpText }]
+									});
+									
+									yield { text: followUpText, done: true };
+								}
+							}
+						}
+						return; // Exit early for Direct API
 					} else if (this.googleGenAI) {
 						// ✅ CRITICAL FIX: tools and toolConfig go in config, not at root level!
 						const followUpConfig: any = {

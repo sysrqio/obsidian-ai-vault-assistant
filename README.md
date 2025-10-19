@@ -74,10 +74,10 @@
 - **Custom Integrations**: Build your own MCP servers for specialized workflows
 
 #### **Example MCP Servers**
-- **Freelancermap**: Search for freelance projects with advanced filtering
 - **GitHub**: Repository management and issue tracking
 - **Database Tools**: Query and manage databases
 - **Custom APIs**: Connect to any REST API or service
+- **Local Scripts**: Run custom tools and utilities
 
 ### 🧠 Advanced Memory System
 - Persistent memory across sessions with DataAdapter
@@ -196,9 +196,9 @@ Configure each tool's permission level:
 - "Summarize https://example.com/article"
 
 ### MCP Tool Usage
-- "Find devops freelance projects in Cologne" (using Freelancermap MCP)
 - "Search for Python projects on GitHub" (using GitHub MCP)
 - "Query my database for user statistics" (using Database MCP)
+- "Run my custom analysis script" (using Local Script MCP)
 - MCP tools integrate seamlessly with built-in tools
 - Use natural language - the AI will choose the appropriate MCP tool
 

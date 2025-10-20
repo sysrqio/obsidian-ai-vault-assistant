@@ -406,12 +406,156 @@ export class DirectGeminiAPIClient {
 	}
 
 	/**
-	 * Generate content with Google Search grounding
+	 * Generate content with Google Search (second call - actual search)
+	 */
+	async generateContentWithGoogleSearch(
+		model: string,
+		contents: Content[],
+		query: string
+	): Promise<any> {
+		Logger.debug('DirectAPI', 'Making Google Search request');
+		Logger.debug('DirectAPI', 'Query:', query);
+
+		// Fetch user info and Code Assist config
+		await this.fetchUserInfo();
+		await this.loadCodeAssist();
+
+		if (!this.projectId) {
+			throw new Error('Failed to load Code Assist project ID');
+		}
+
+		const url = `${this.baseUrl}/${this.apiVersion}:generateContent`;
+		Logger.debug('DirectAPI', 'URL:', url);
+		
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+			'Authorization': `Bearer ${this.accessToken}`,
+		};
+
+		// No quota header needed for Code Assist API
+
+		const body = {
+			model: model,
+			project: this.projectId,
+			user_prompt_id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}########0`,
+			request: {
+				contents: contents.map(c => ({
+					role: c.role,
+					parts: c.parts?.map(p => ({ text: p.text })) || []
+				})),
+				systemInstruction: {
+					role: "user",
+					parts: [{ text: "You are an interactive assistant specializing in knowledge management and note-taking within Obsidian." }]
+				},
+				tools: [{ googleSearch: {} }],
+				generationConfig: {
+					temperature: 0,
+					topP: 1
+				},
+				session_id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+			}
+		};
+
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', '📤 GOOGLE SEARCH REQUEST:');
+		Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+		Logger.debug('DirectAPI', 'URL:', url);
+		Logger.debug('DirectAPI', 'Method: POST');
+		Logger.debug('DirectAPI', 'Headers:', JSON.stringify(headers, null, 2));
+		Logger.debug('DirectAPI', 'Request body:', JSON.stringify(body, null, 2));
+
+		const requestBody = JSON.stringify(body);
+		const urlObj = new URL(url);
+
+		const options: https.RequestOptions = {
+			hostname: urlObj.hostname,
+			port: 443,
+			path: urlObj.pathname,
+			method: 'POST',
+			headers: {
+				...headers,
+				'Content-Length': Buffer.byteLength(requestBody),
+			}
+		};
+
+		try {
+			const httpResponse = await new Promise<any>((resolve, reject) => {
+				const req = https.request(options, (res) => {
+					Logger.debug('DirectAPI', 'Search response status:', res.statusCode);
+					
+					if (res.statusCode && res.statusCode >= 400) {
+						let errorData = '';
+						res.on('data', (chunk) => {
+							errorData += chunk;
+						});
+						res.on('end', () => {
+							Logger.error('DirectAPI', 'Search API error:', errorData);
+							reject(new Error(`API error: ${res.statusCode} - ${errorData}`));
+						});
+						return;
+					}
+					
+					// Handle decompression based on Content-Encoding
+					let stream: any = res;
+					const encoding = res.headers['content-encoding'];
+					if (encoding === 'gzip') {
+						stream = res.pipe(zlib.createGunzip());
+					} else if (encoding === 'deflate') {
+						stream = res.pipe(zlib.createInflate());
+					}
+					
+					resolve(stream);
+				});
+
+				req.on('error', (error) => {
+					Logger.error('DirectAPI', 'Search request error:', error);
+					reject(error);
+				});
+
+				req.write(requestBody);
+				req.end();
+			});
+
+			let responseData = '';
+			await new Promise<void>((resolve, reject) => {
+				httpResponse.on('data', (chunk: Buffer) => {
+					responseData += chunk.toString();
+				});
+				httpResponse.on('end', () => resolve());
+				httpResponse.on('error', reject);
+			});
+
+			// Parse JSON response (not SSE for generateContent)
+			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('DirectAPI', '📥 GOOGLE SEARCH RESPONSE:');
+			Logger.debug('DirectAPI', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+			Logger.debug('DirectAPI', 'Raw response data:', responseData);
+			
+			const parsedResponse = JSON.parse(responseData);
+			
+			if (!parsedResponse.response) {
+				throw new Error('No valid response found in JSON response');
+			}
+			
+			Logger.debug('DirectAPI', 'Parsed response:', JSON.stringify(parsedResponse, null, 2));
+			Logger.debug('DirectAPI', '✅ Search complete');
+			
+			return parsedResponse;
+
+		} catch (error: any) {
+			Logger.error('DirectAPI', 'Search failed:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Generate content with Google Search grounding (first call - tool selection)
 	 */
 	async generateContentWithGrounding(
 		model: string,
 		contents: Content[],
-		query: string
+		query: string,
+		functionDeclarations: any[] = []
 	): Promise<any> {
 		Logger.debug('DirectAPI', 'Making grounded search request');
 		Logger.debug('DirectAPI', 'Query:', query);
@@ -424,7 +568,7 @@ export class DirectGeminiAPIClient {
 			throw new Error('Failed to load Code Assist project ID');
 		}
 
-		const url = `${this.baseUrl}/${this.apiVersion}/models/${model}:generateContent`;
+		const url = `${this.baseUrl}/${this.apiVersion}:streamGenerateContent?alt=sse`;
 		
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
@@ -434,15 +578,20 @@ export class DirectGeminiAPIClient {
 		// No quota header needed for Code Assist API
 
 		const body = {
-			contents: contents.map(c => ({
-				role: c.role,
-				parts: c.parts?.map(p => ({ text: p.text })) || []
-			})),
-			generationConfig: {
-				temperature: 0.7,
-				maxOutputTokens: 8192,
-			},
-			tools: [{ googleSearch: {} }]
+			model: model,
+			project: this.projectId,
+			user_prompt_id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}########0`,
+			request: {
+				contents: contents.map(c => ({
+					role: c.role,
+					parts: c.parts?.map(p => ({ text: p.text })) || []
+				})),
+				generationConfig: {
+					temperature: 0.7,
+					maxOutputTokens: 8192,
+				},
+				tools: [{ functionDeclarations: functionDeclarations }]
+			}
 		};
 
 		Logger.debug('DirectAPI', 'Request body:', JSON.stringify(body, null, 2));
@@ -499,7 +648,64 @@ export class DirectGeminiAPIClient {
 				httpResponse.on('error', reject);
 			});
 
-			const parsedResponse = JSON.parse(responseData);
+			// Debug: Log raw response data
+			Logger.debug('DirectAPI', 'Raw response data:', responseData);
+			Logger.debug('DirectAPI', 'Response data length:', responseData.length);
+			
+			// Try to parse as JSON first (in case it's not SSE)
+			let parsedResponse = null;
+			try {
+				const jsonResponse = JSON.parse(responseData);
+				
+				// Handle array response format
+				if (Array.isArray(jsonResponse) && jsonResponse.length > 0 && jsonResponse[0].response) {
+					parsedResponse = jsonResponse[0].response;
+					Logger.debug('DirectAPI', '✅ Parsed as array JSON response');
+				}
+				// Handle direct response format
+				else if (jsonResponse.response) {
+					parsedResponse = jsonResponse.response;
+					Logger.debug('DirectAPI', '✅ Parsed as JSON response');
+				} 
+				// Handle direct candidates format
+				else if (jsonResponse.candidates) {
+					parsedResponse = jsonResponse;
+					Logger.debug('DirectAPI', '✅ Parsed as direct JSON response with candidates');
+				}
+			} catch (e) {
+				Logger.debug('DirectAPI', 'Not JSON, trying SSE parsing...');
+			}
+			
+			// If not JSON, try SSE parsing
+			if (!parsedResponse) {
+				const lines = responseData.split('\n');
+				Logger.debug('DirectAPI', 'SSE lines count:', lines.length);
+				
+				for (const line of lines) {
+					if (line.startsWith('data: ')) {
+						const data = line.substring(6);
+						if (data.trim() === '') continue;
+						
+						try {
+							const parsed = JSON.parse(data);
+							if (parsed.response) {
+								parsedResponse = parsed.response;
+								Logger.debug('DirectAPI', '✅ Parsed SSE response');
+								break;
+							}
+						} catch (e) {
+							// Skip invalid JSON lines
+							continue;
+						}
+					}
+				}
+			}
+			
+			if (!parsedResponse) {
+				Logger.error('DirectAPI', 'Failed to parse response. Raw data:', responseData);
+				throw new Error('No valid response found in SSE stream');
+			}
+			
 			Logger.debug('DirectAPI', '✅ Search complete');
 			
 			return parsedResponse;

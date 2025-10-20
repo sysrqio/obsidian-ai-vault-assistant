@@ -239,6 +239,9 @@
     border-radius: 12px;
     margin: 4px 0;
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
@@ -247,7 +250,10 @@
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
     border-bottom-right-radius: 4px;
-    margin-left: 10px; /* Small margin to left for more space */
+    margin-left: 20px; /* More margin to left to prevent cutoff */
+    max-width: 90%; /* Slightly smaller max-width for user messages */
+    min-height: auto; /* Ensure proper height */
+    padding: 12px 16px; /* Ensure proper padding */
 }
 
 .gemini-message.assistant {
@@ -255,7 +261,8 @@
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border-bottom-left-radius: 4px;
-    margin-right: 10px; /* Small margin to right for more space */
+    margin-right: 20px; /* More margin to right to prevent cutoff */
+    max-width: 90%; /* Slightly smaller max-width for assistant messages */
 }
 
 .gemini-message.system {
@@ -272,6 +279,19 @@
 	background-color: rgba(255, 0, 0, 0.08);
 	border: 1px solid rgba(255, 0, 0, 0.2);
 	border-left: 4px solid rgba(255, 0, 0, 0.6);
+}
+
+/* Tool execution messages */
+.gemini-message.tool {
+    align-self: flex-start;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-left: 4px solid var(--interactive-accent);
+    border-bottom-left-radius: 4px;
+    margin-right: 20px;
+    max-width: 90%;
+    font-size: 0.9em;
 }
 
 /* Message header with menu button */
@@ -389,6 +409,9 @@
     padding: 8px;
     border-radius: 4px;
     overflow-x: auto;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .gemini-message-content .markdown-rendered pre code {
@@ -406,6 +429,9 @@
 .gemini-message-content .markdown-rendered a {
     color: var(--link-color);
     text-decoration: none;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-all;
 }
 
 .gemini-message-content .markdown-rendered a:hover {

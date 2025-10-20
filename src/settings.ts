@@ -79,6 +79,8 @@ export interface GeminiSettings {
 	contextSettings: ContextSettings;
 	// MCP Configuration
 	enableMCP?: boolean;
+	// View Configuration
+	viewPosition?: 'left' | 'right' | 'tab';
 }
 
 export const DEFAULT_SETTINGS: GeminiSettings = {
@@ -104,6 +106,8 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	},
 	// MCP Configuration
 	enableMCP: true,
+	// View Configuration
+	viewPosition: 'right',
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -521,6 +525,7 @@ export class GeminiSettingTab extends PluginSettingTab {
 					new McpSettingsTab(this.app, this.plugin).open();
 				}));
 	}
+
 
 	// Memories Section
 	this.displayMemoriesSection(containerEl);

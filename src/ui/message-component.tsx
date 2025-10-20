@@ -39,6 +39,25 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 				'/', // Vault root path for wikilink resolution
 				component
 			);
+
+			// Ensure internal links are clickable even inside React components
+			try {
+				const app = (component as any)?.app;
+				if (app && contentRef.current) {
+					const anchors = contentRef.current.querySelectorAll('a.internal-link, a[href^="obsidian://"]');
+					anchors.forEach((a: Element) => {
+						(a as HTMLAnchorElement).addEventListener('click', (evt) => {
+							evt.preventDefault();
+							const href = (a as HTMLAnchorElement).getAttribute('href') || (a as any).getAttribute('data-href');
+							if (href) {
+								app.workspace.openLinkText(href, '/', false);
+							}
+						});
+					});
+				}
+			} catch (err) {
+				// best-effort: do nothing if link wiring fails
+			}
 		}
 	}, [message.content, renderMarkdown, isUser, component]);
 

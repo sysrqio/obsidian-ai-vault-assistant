@@ -86,6 +86,12 @@ export default class GeminiPlugin extends Plugin {
 
 		this.addSettingTab(new GeminiSettingTab(this.app, this));
 
+		// Always restore view on startup
+		// Use setTimeout to ensure the workspace is fully loaded
+		setTimeout(() => {
+			this.restoreViewOnStartup();
+		}, 1000);
+
 		Logger.info('Plugin', 'AI Vault Assistant loaded successfully');
 	}
 
@@ -108,7 +114,17 @@ export default class GeminiPlugin extends Plugin {
 		if (leaves.length > 0) {
 			leaf = leaves[0];
 		} else {
-			leaf = workspace.getRightLeaf(false);
+			// Create new leaf based on saved position or default
+			const position = this.settings.viewPosition || 'right';
+			
+			if (position === 'left') {
+				leaf = workspace.getLeftLeaf(false);
+			} else if (position === 'tab') {
+				leaf = workspace.getLeaf('tab');
+			} else {
+				leaf = workspace.getRightLeaf(false);
+			}
+			
 			if (leaf) {
 				await leaf.setViewState({ type: VIEW_TYPE_GEMINI, active: true });
 			}
@@ -116,6 +132,8 @@ export default class GeminiPlugin extends Plugin {
 
 		if (leaf) {
 			workspace.revealLeaf(leaf);
+			// Save the current position for next time
+			await this.saveViewPosition(leaf);
 		}
 	}
 
@@ -315,6 +333,59 @@ export default class GeminiPlugin extends Plugin {
 			Logger.info('Plugin', `Registered ${totalRegistered} MCP tools from ${clients.size} servers`);
 		} catch (error) {
 			Logger.error('Plugin', 'Failed to register MCP tools:', error);
+		}
+	}
+
+	/**
+	 * Save the current view position for restoration on startup
+	 */
+	async saveViewPosition(leaf: WorkspaceLeaf): Promise<void> {
+		try {
+			const { workspace } = this.app;
+			
+			// Determine the position of the leaf
+			let position: 'left' | 'right' | 'tab' = 'right';
+			
+			if (leaf.getRoot() === workspace.leftSplit) {
+				position = 'left';
+			} else if (leaf.getRoot() === workspace.rightSplit) {
+				position = 'right';
+			} else if (leaf.getRoot() === workspace.rootSplit) {
+				position = 'tab';
+			}
+			
+			// Only update if position has changed
+			if (this.settings.viewPosition !== position) {
+				this.settings.viewPosition = position;
+				await this.saveSettings();
+				Logger.debug('Plugin', `View position saved: ${position}`);
+			}
+		} catch (error) {
+			Logger.error('Plugin', 'Failed to save view position:', error);
+		}
+	}
+
+	/**
+	 * Restore the view on startup if it was open when Obsidian was closed
+	 */
+	async restoreViewOnStartup(): Promise<void> {
+		try {
+			const { workspace } = this.app;
+			
+			// Check if there are any existing Gemini views
+			const existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_GEMINI);
+			
+			if (existingLeaves.length === 0) {
+				// No existing view, create one in the saved position
+				Logger.debug('Plugin', 'Restoring view on startup...');
+				await this.activateView();
+			} else {
+				// View already exists, just reveal it
+				Logger.debug('Plugin', 'View already exists, revealing...');
+				workspace.revealLeaf(existingLeaves[0]);
+			}
+		} catch (error) {
+			Logger.error('Plugin', 'Failed to restore view on startup:', error);
 		}
 	}
 

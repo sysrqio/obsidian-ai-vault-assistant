@@ -1653,7 +1653,9 @@ export class GeminiClient {
 
                                 // Optionally render tool result. For verbose tools like search_vault,
                                 // we do NOT render the raw result and only send it to the model.
-                                const suppressResultRender = toolCall.name === 'search_vault';
+                                // Suppress result rendering for all tools except google_web_search.
+                                // The result is still passed to the model via functionResponse; only the model's reply is shown.
+                                const suppressResultRender = toolCall.name !== 'google_web_search';
                                 if (!suppressResultRender) {
                                     // Then yield the tool result as a separate chat message
                                     yield { text: result, done: false, isFollowUp: true };
@@ -2418,7 +2420,7 @@ When requested to read, summarize, or analyze files, follow this sequence:
 When you call 'search_vault' (which may use the Omnisearch plugin under the hood), do NOT return the raw search output 1:1. Instead, always:
 - Present a clean, readable Markdown list of results using [[WikiLinks]] so they are clickable in Obsidian.
 - Include only the top 5–10 most relevant items, numbered.
-- For each item, show: `[[Note Title]]` on one line, and the file path on the next line in italics (no HTML, no raw Omnisearch markup).
+- For each item, show: \`[[Note Title]]\` on one line, and the file path on the next line in italics (no HTML, no raw Omnisearch markup).
 - Optionally include a very short snippet (one short line) if helpful, but avoid dumping large excerpts.
 - After the list, propose concrete next actions, e.g., “I can read one of these files for you” and then use 'read_file' for the chosen note.
 - Never echo long HTML chunks or code fences from the search provider; reformat into concise Markdown as described above.

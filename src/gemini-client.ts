@@ -203,13 +203,27 @@ export class GeminiClient {
 	private initializeTools(): void {
 		Logger.debug('Gemini', 'initializeTools() called');
 		const functionDeclarations: FunctionDeclaration[] = [];
+		const processedToolNames = new Set<string>(); // Global duplicate prevention
 
 		// Load MCP tools if available
 		Logger.debug('Gemini', 'Loading MCP tools...');
-		this.loadMcpTools(functionDeclarations);
+		this.loadMcpTools(functionDeclarations, processedToolNames);
 		Logger.debug('Gemini', `MCP tools loaded, total functionDeclarations so far: ${functionDeclarations.length}`);
 
-		functionDeclarations.push({
+		// Helper function to add tools with duplicate checking
+		const addTool = (tool: FunctionDeclaration) => {
+			if (tool.name && !processedToolNames.has(tool.name)) {
+				functionDeclarations.push(tool);
+				processedToolNames.add(tool.name);
+				Logger.debug('Gemini', `Added tool: ${tool.name}`);
+			} else if (tool.name) {
+				Logger.debug('Gemini', `Skipping duplicate tool: ${tool.name}`);
+			} else {
+				Logger.warn('Gemini', 'Skipping tool without name');
+			}
+		};
+
+		addTool({
 			name: 'read_file',
 			description: 'Reads and returns the content of a specified file from the vault. Handles text files and returns their content.',
 			parameters: {
@@ -232,7 +246,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'list_files',
 			description: 'Lists all files in the vault or in a specific directory.',
 			parameters: {
@@ -246,7 +260,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'read_many_files',
 			description: 'Reads content from multiple files specified by paths or glob patterns within the vault. Concatenates text file content with separators. Supports include/exclude patterns for filtering files.',
 			parameters: {
@@ -283,7 +297,7 @@ export class GeminiClient {
 		});
 
 		if (this.settings.enableFileTools) {
-			functionDeclarations.push({
+			addTool({
 				name: 'write_file',
 				description: 'Creates a new file or overwrites an existing file in the vault with the provided content.',
 				parameters: {
@@ -303,7 +317,7 @@ export class GeminiClient {
 			});
 		}
 
-		functionDeclarations.push({
+		addTool({
 			name: 'web_fetch',
 			description: 'Processes content from URL(s), including local and private network addresses. Include up to 20 URLs and instructions (e.g., summarize, extract specific data) directly in the prompt parameter.',
 			parameters: {
@@ -318,7 +332,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'google_web_search',
 			description: 'Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.',
 			parameters: {
@@ -333,7 +347,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'save_memory',
 			description: 'Saves a specific piece of information or fact to your long-term memory. Use this when the user explicitly asks you to remember something, or when they state a clear, concise fact that seems important to retain for future interactions.',
 			parameters: {
@@ -352,7 +366,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'delete_memory',
 			description: 'Deletes a specific memory by searching for facts that match the given text. Use this to remove incorrect, outdated, or duplicate memories. When a user corrects a previously saved fact, delete the old one before saving the new one.',
 			parameters: {
@@ -371,7 +385,7 @@ export class GeminiClient {
 		// Vault Navigation & Discovery Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_active_file',
 			description: 'Gets information about the currently open/active file in Obsidian, including its path, metadata, tags, and a content preview.',
 			parameters: {
@@ -380,7 +394,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'open_file',
 			description: 'Opens a file in Obsidian. Can open in the current pane or create a new pane.',
 			parameters: {
@@ -399,7 +413,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'search_vault',
 			description: 'Searches the entire vault for files containing specific text. Automatically uses Omnisearch plugin if available for better results (fuzzy matching, relevance scoring, PDF support), otherwise falls back to built-in search. Returns matching files with context snippets showing where the text appears.',
 			parameters: {
@@ -418,7 +432,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_recent_files',
 			description: 'Gets a list of recently modified files in the vault, sorted by modification time.',
 			parameters: {
@@ -440,7 +454,7 @@ export class GeminiClient {
 		// Link & Connection Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_backlinks',
 			description: 'Gets all backlinks TO a specific file (i.e., files that link to this file).',
 			parameters: {
@@ -455,7 +469,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_outgoing_links',
 			description: 'Gets all outgoing links FROM a specific file (i.e., files that this file links to).',
 			parameters: {
@@ -470,7 +484,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_graph_neighbors',
 			description: 'Gets all directly connected notes (both incoming and outgoing links) for a file. Useful for understanding the local graph structure around a note.',
 			parameters: {
@@ -489,7 +503,7 @@ export class GeminiClient {
 		// File Management Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'rename_file',
 			description: 'Renames a file. Obsidian automatically updates all backlinks to use the new name.',
 			parameters: {
@@ -508,7 +522,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'create_folder',
 			description: 'Creates a new folder in the vault. Automatically creates parent folders if needed (recursive).',
 			parameters: {
@@ -523,7 +537,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'move_file',
 			description: 'Moves a file to a different folder in the vault.',
 			parameters: {
@@ -542,7 +556,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'delete_file',
 			description: 'Deletes a file from the vault. By default, moves to system trash. Use with caution.',
 			parameters: {
@@ -565,7 +579,7 @@ export class GeminiClient {
 		// Metadata & Organization Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_file_metadata',
 			description: 'Gets comprehensive metadata about a file including frontmatter, tags, links, backlinks, creation/modification dates, and file statistics.',
 			parameters: {
@@ -580,7 +594,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'update_frontmatter',
 			description: 'Updates or adds fields to a file\'s YAML frontmatter. Useful for adding tags, aliases, or custom metadata.',
 			parameters: {
@@ -599,7 +613,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_tags',
 			description: 'Gets all tags in the vault or tags from a specific file.',
 			parameters: {
@@ -617,7 +631,7 @@ export class GeminiClient {
 		// Workflow & Template Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_daily_note',
 			description: 'Gets or creates today\'s daily note based on Obsidian\'s Daily Notes plugin settings. Automatically opens the note.',
 			parameters: {
@@ -626,7 +640,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'create_from_template',
 			description: 'Creates a new file from a template. Supports variable replacement ({{variable}}) and automatic date/time insertion.',
 			parameters: {
@@ -653,7 +667,7 @@ export class GeminiClient {
 		// Workspace Management Tools
 		// ========================================================================
 
-		functionDeclarations.push({
+		addTool({
 			name: 'get_workspace_layout',
 			description: 'Gets information about the current workspace layout, including all open files and which panes they\'re in.',
 			parameters: {
@@ -662,7 +676,7 @@ export class GeminiClient {
 			}
 		});
 
-		functionDeclarations.push({
+		addTool({
 			name: 'create_pane',
 			description: 'Creates a new pane/split in the workspace. Can optionally open a specific file in the new pane.',
 			parameters: {
@@ -1040,8 +1054,11 @@ export class GeminiClient {
 			Logger.debug('GoogleSearch', `🐛 Full response structure:`, JSON.stringify(response, null, 2));
 			
 			// Extract text from the correct path in the response structure
-			const responseText = response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-			const groundingMetadata = response?.response?.candidates?.[0]?.groundingMetadata;
+			// OAuth (Direct API) uses response.response.candidates, SDK uses response.candidates
+			const responseText = response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || 
+								 response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+			const groundingMetadata = response?.response?.candidates?.[0]?.groundingMetadata || 
+									  response?.candidates?.[0]?.groundingMetadata;
 			const sources = groundingMetadata?.groundingChunks || [];
 
 			Logger.debug('GoogleSearch', `🐛 Response text length: ${responseText.length}`);
@@ -1293,7 +1310,7 @@ export class GeminiClient {
 	/**
 	 * Load MCP tools into function declarations
 	 */
-	private loadMcpTools(functionDeclarations: FunctionDeclaration[]): void {
+	private loadMcpTools(functionDeclarations: FunctionDeclaration[], processedToolNames: Set<string>): void {
 		Logger.debug('Gemini', '🔧 loadMcpTools() called');
 		Logger.debug('Gemini', `MCP enabled: ${this.settings.enableMCP}`);
 		
@@ -1317,7 +1334,6 @@ export class GeminiClient {
 			Logger.debug('Gemini', `Found ${mcpTools.size} tools in registry`);
 			Logger.debug('Gemini', `Tool registry keys:`, Array.from(mcpTools.keys()));
 			let mcpToolCount = 0;
-			const processedToolNames = new Set<string>(); // Track processed tool names to avoid duplicates
 			
 			for (const [toolName, toolEntry] of mcpTools) {
 				Logger.debug('Gemini', `Processing tool: ${toolName}`);
@@ -1344,25 +1360,37 @@ export class GeminiClient {
 						const geminiTool = toolEntry.toGeminiTool();
 						Logger.debug('Gemini', `Converted tool ${toolName}:`, geminiTool);
 						if (geminiTool.functionDeclarations) {
-							functionDeclarations.push(...geminiTool.functionDeclarations);
-							mcpToolCount++;
-							processedToolNames.add(toolName);
-							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
+							for (const decl of geminiTool.functionDeclarations) {
+								if (!processedToolNames.has(decl.name)) {
+									functionDeclarations.push(decl);
+									processedToolNames.add(decl.name);
+									mcpToolCount++;
+									Logger.debug('Gemini', `Added MCP tool: ${decl.name}`);
+								} else {
+									Logger.debug('Gemini', `Skipping duplicate MCP tool: ${decl.name}`);
+								}
+							}
 						}
 					} catch (error) {
 						Logger.error('Gemini', `Failed to convert MCP tool ${toolName}:`, error);
 					}
 				}
-				// Also check the old structure for compatibility
+				// Also check the old structure for compatibility (but only if not already processed)
 				else if (toolEntry.tool && typeof toolEntry.tool.toGeminiTool === 'function') {
 					try {
 						const geminiTool = toolEntry.tool.toGeminiTool();
 						Logger.debug('Gemini', `Converted tool ${toolName}:`, geminiTool);
 						if (geminiTool.functionDeclarations) {
-							functionDeclarations.push(...geminiTool.functionDeclarations);
-							mcpToolCount++;
-							processedToolNames.add(toolName);
-							Logger.debug('Gemini', `Added MCP tool: ${toolName}`);
+							for (const decl of geminiTool.functionDeclarations) {
+								if (!processedToolNames.has(decl.name)) {
+									functionDeclarations.push(decl);
+									processedToolNames.add(decl.name);
+									mcpToolCount++;
+									Logger.debug('Gemini', `Added MCP tool: ${decl.name}`);
+								} else {
+									Logger.debug('Gemini', `Skipping duplicate MCP tool: ${decl.name}`);
+								}
+							}
 						}
 					} catch (error) {
 						Logger.error('Gemini', `Failed to convert MCP tool ${toolName}:`, error);
@@ -1601,9 +1629,9 @@ export class GeminiClient {
 							yield { text: accumulatedText, done: false, toolCalls: toolCalls.length > 0 ? toolCalls : undefined };
 						}
 						
-						// Process tool calls if any
-						if (toolCalls.length > 0) {
-							for (const toolCall of toolCalls) {
+                        // Process tool calls if any
+                        if (toolCalls.length > 0) {
+                            for (const toolCall of toolCalls) {
 								try {
 									const result = await this.executeTool(toolCall.name, toolCall.args);
 									toolCall.status = 'executed';
@@ -1620,19 +1648,86 @@ export class GeminiClient {
 										}]
 									});
 									
-									// First yield the tool execution info
-									yield { text: '', done: false, toolCalls: [toolCall] };
-									
-									// Then yield the tool result as a separate chat message
-									yield { text: result, done: false, isFollowUp: true };
+                                // First yield the tool execution info
+                                yield { text: '', done: false, toolCalls: [toolCall] };
+
+                                // Optionally render tool result. For verbose tools like search_vault,
+                                // we do NOT render the raw result and only send it to the model.
+                                const suppressResultRender = toolCall.name === 'search_vault';
+                                if (!suppressResultRender) {
+                                    // Then yield the tool result as a separate chat message
+                                    yield { text: result, done: false, isFollowUp: true };
+                                } else {
+                                    Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
+                                }
 								} catch (error) {
 									toolCall.status = 'rejected';
 									toolCall.error = (error as Error).message;
 									yield { text: '', done: false, toolCalls: [toolCall] };
 								}
 							}
-							
-							// No follow-up response needed - tool results are rendered directly
+                            
+                            // After executing tools, send a follow-up request so the model can respond to the tool results
+                            try {
+                                Logger.debug('Gemini', '📨 Sending follow-up after tool execution (Direct API)...');
+                                Logger.debug('Gemini', '🔍 History before follow-up (last 2 items):', JSON.stringify(this.history.slice(-2), null, 2));
+
+                                const clonedHistory = this.history.map(content => ({
+                                    role: content.role,
+                                    parts: content.parts?.map(part => {
+                                        if (part.text !== undefined) return { text: part.text };
+                                        if (part.functionCall) return { 
+                                            functionCall: {
+                                                name: part.functionCall.name,
+                                                args: part.functionCall.args
+                                            }
+                                        };
+                                        if (part.functionResponse) return {
+                                            functionResponse: {
+                                                name: part.functionResponse.name,
+                                                response: part.functionResponse.response
+                                            }
+                                        };
+                                        return { ...part };
+                                    }) || []
+                                }));
+
+                                const followUpResponse = await this.directAPIClient!.generateContent(
+                                    effectiveModel,
+                                    clonedHistory as Content[],
+                                    systemPrompt,
+                                    this.tools,
+                                    {
+                                        temperature: this.settings.temperature,
+                                        maxOutputTokens: this.settings.maxTokens
+                                    }
+                                );
+
+                                if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
+                                    const candidate = followUpResponse.candidates[0];
+                                    if (candidate.content && candidate.content.parts) {
+                                        let followUpText = '';
+                                        for (const part of candidate.content.parts) {
+                                            if (part.text) {
+                                                followUpText += part.text;
+                                            }
+                                        }
+
+                                        if (followUpText) {
+                                            // Add follow-up response to history
+                                            this.history.push({
+                                                role: 'model',
+                                                parts: [{ text: followUpText }]
+                                            });
+
+                                            Logger.debug('Gemini', '📝 Follow-up model response (Direct API):', followUpText.substring(0, 200));
+                                            yield { text: followUpText, done: true };
+                                        }
+                                    }
+                                }
+                            } catch (error) {
+                                Logger.error('Gemini', 'Follow-up after tool execution failed (Direct API):', error);
+                            }
 						} else {
 							// No tool calls, just yield the response as done
 							yield { text: accumulatedText, done: true };
@@ -2318,6 +2413,15 @@ When requested to read, summarize, or analyze files, follow this sequence:
 1. **Understand:** Think about the user's request and which files are relevant. Use 'list_files' to discover available files if needed.
 2. **Read:** Use 'read_file' to get the actual content of the relevant file(s). Remember: 'list_files' only gives you filenames, NOT content.
 3. **Answer:** Provide your response based on the file content you read.
+
+## Rendering Search Results (search_vault / Omnisearch)
+When you call 'search_vault' (which may use the Omnisearch plugin under the hood), do NOT return the raw search output 1:1. Instead, always:
+- Present a clean, readable Markdown list of results using [[WikiLinks]] so they are clickable in Obsidian.
+- Include only the top 5–10 most relevant items, numbered.
+- For each item, show: `[[Note Title]]` on one line, and the file path on the next line in italics (no HTML, no raw Omnisearch markup).
+- Optionally include a very short snippet (one short line) if helpful, but avoid dumping large excerpts.
+- After the list, propose concrete next actions, e.g., “I can read one of these files for you” and then use 'read_file' for the chosen note.
+- Never echo long HTML chunks or code fences from the search provider; reformat into concise Markdown as described above.
 
 # Operational Guidelines
 

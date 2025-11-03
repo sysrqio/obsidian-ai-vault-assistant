@@ -959,70 +959,59 @@ export class GeminiClient {
 
 		Logger.debug('WebFetch', `Fetching: ${url} (${maxRedirects} redirects remaining)`);
 		
-		const https = require('https');
-		const http = require('http');
-		const urlObj = new URL(url);
-		const isHttps = urlObj.protocol === 'https:';
-		const client = isHttps ? https : http;
-
-		const response = await new Promise<{statusCode: number, headers: any, data: string}>((resolve, reject) => {
-			const request = client.request(url, {
+		// Use fetch API which works on both desktop and mobile
+		try {
+			const response = await fetch(url, {
 				method: 'GET',
 				headers: {
 					'User-Agent': 'ObsidianGeminiPlugin/0.1.0',
 				},
-				timeout: 10000
-			}, (response: any) => {
-				let data = '';
-				response.on('data', (chunk: string) => {
-					data += chunk;
-				});
-				response.on('end', () => {
-					resolve({
-						statusCode: response.statusCode,
-						headers: response.headers,
-						data: data
-					});
-				});
+				redirect: 'manual' // Handle redirects manually
 			});
 
-			request.on('error', (error: Error) => {
-				reject(error);
+			// Get response text
+			const data = await response.text();
+
+			// Convert Headers object to plain object
+			const headers: Record<string, string> = {};
+			response.headers.forEach((value, key) => {
+				headers[key] = value;
 			});
 
-			request.on('timeout', () => {
-				request.destroy();
-				reject(new Error('Request timeout'));
-			});
-
-			request.end();
-		});
-
-		// Check for redirect status codes (301, 302, 303, 307, 308)
-		if (response.statusCode >= 300 && response.statusCode < 400) {
-			const location = response.headers.location;
-			if (location) {
-				Logger.debug('WebFetch', `Following redirect ${response.statusCode} to: ${location}`);
-				
-				// Handle relative redirects
-				const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
-				
-				// Recursively follow redirects
-				return await this.fetchWithRedirects(redirectUrl, maxRedirects - 1);
-			} else {
-				throw new Error(`Redirect response (${response.statusCode}) without Location header`);
+			// Check for redirect status codes (301, 302, 303, 307, 308)
+			if (response.status >= 300 && response.status < 400) {
+				const location = headers.location || response.headers.get('location');
+				if (location) {
+					Logger.debug('WebFetch', `Following redirect ${response.status} to: ${location}`);
+					
+					// Handle relative redirects
+					const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
+					
+					// Recursively follow redirects
+					return await this.fetchWithRedirects(redirectUrl, maxRedirects - 1);
+				} else {
+					throw new Error(`Redirect response (${response.status}) without Location header`);
+				}
 			}
-		}
 
-		// Check for successful response
-		if (response.statusCode < 200 || response.statusCode >= 300) {
-			throw new Error(`Request failed with status code ${response.statusCode}`);
-		}
+			// Check for successful response
+			if (response.status < 200 || response.status >= 300) {
+				throw new Error(`Request failed with status code ${response.status}`);
+			}
 
-		return {
-			...response,
-			finalUrl: url
-		};
+			return {
+				statusCode: response.status,
+				headers: headers,
+				data: data,
+				finalUrl: url
+			};
+		} catch (error) {
+			// Handle fetch errors
+			if (error instanceof TypeError && error.message.includes('fetch')) {
+				throw new Error(`Network error: ${error.message}`);
+			}
+			throw error;
+		}
 	}
 
 	private processWebFetchResponse(response: {statusCode: number, headers: any, data: string, finalUrl: string}, originalUrl: string, prompt: string): string {

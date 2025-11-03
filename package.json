@@ -1,6 +1,6 @@
 {
   "name": "obsidian-ai-vault-assistant",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "AI Vault Assistant - AI-powered vault management with 26 tools for navigation, search, and knowledge organization",
   "main": "main.js",
   "scripts": {

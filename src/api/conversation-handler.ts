@@ -70,33 +70,55 @@ export class ConversationHandler {
       let currentToolCalls = toolCalls;
       let previousModelText = accumulatedText;
       let previousModelToolCalls = toolCalls;
+      let previousToolResponses: Array<{name: string; response: any}> = [];
       
       for (let turn = 1; turn <= 10; turn++) {
         // Execute tools
         const toolResponses = await this.toolExecutor.executeToolsWithApproval(currentToolCalls);
-        this.historyManager.addToolResponses(toolResponses);
         
-        // Follow-up call (need to include current user message + previous model response with tool calls since they're not in history yet)
+        // Build follow-up contents with correct structure:
+        // 1. History (old messages, without current turn)
+        // 2. User message (current)
+        // 3. Model response with function calls (from previous API call)
+        // 4. User message with function responses (just executed, immediately after function calls)
+        
         const historyContents = this.historyManager.serializeForAPI();
-        const followUpContents = [
+        const followUpContents: any[] = [
           ...historyContents,
           {
             role: 'user' as const,
             parts: [{ text: userMessage }]
-          },
-          {
-            role: 'model' as const,
-            parts: [
-              ...(previousModelText ? [{ text: previousModelText }] : []),
-              ...previousModelToolCalls.map(tc => ({
-                functionCall: {
-                  name: tc.name,
-                  args: tc.args
-                }
-              }))
-            ]
           }
         ];
+        
+        // Add previous model response with function calls (contains the function calls we just executed)
+        // This is the model response from the previous API call that contains the function calls
+        followUpContents.push({
+          role: 'model' as const,
+          parts: [
+            ...(previousModelText ? [{ text: previousModelText }] : []),
+            ...previousModelToolCalls.map(tc => ({
+              functionCall: {
+                name: tc.name,
+                args: tc.args
+              }
+            }))
+          ]
+        });
+        
+        // Add current tool responses (immediately after function calls)
+        // This must come immediately after the model response with function calls
+        if (toolResponses.length > 0) {
+          followUpContents.push({
+            role: 'user' as const,
+            parts: toolResponses.map(tr => ({
+              functionResponse: {
+                name: tr.name,
+                response: tr.response
+              }
+            }))
+          });
+        }
         
         const followUpResult = await this.processStream(
           this.apiClient.streamGenerateContent(
@@ -106,17 +128,27 @@ export class ConversationHandler {
           )
         );
         
+        // Add model response and tool responses to history AFTER successful API call
+        // This ensures they're in history for the next turn
+        this.historyManager.addModelResponse(previousModelText, previousModelToolCalls);
+        this.historyManager.addToolResponses(toolResponses);
+        
         // Accumulate text from follow-up responses
         if (followUpResult.text) {
           accumulatedText += followUpResult.text;
           yield { text: followUpResult.text, done: false };
         }
         
-        if (followUpResult.toolCalls.length === 0) break;
+        if (followUpResult.toolCalls.length === 0) {
+          // No more function calls, conversation is complete
+          // The final model response will be added at the end (after loop completes)
+          break;
+        }
         
         // Update for next turn
         previousModelText = followUpResult.text || '';
         previousModelToolCalls = followUpResult.toolCalls;
+        previousToolResponses = toolResponses;
         currentToolCalls = followUpResult.toolCalls;
         finalToolCalls = currentToolCalls;
       }

@@ -1,6 +1,6 @@
 # AI Vault Assistant for Obsidian
 
-**Like [gemini-cli](https://github.com/google-gemini/gemini-cli) for Obsidian** — an AI-powered assistant with 26+ comprehensive vault tools for navigation, search, file management, and knowledge organization. Features **Model Context Protocol (MCP) support** for extending capabilities with external tools and services. Currently powered by Google Gemini with support for multiple AI models.
+**Like [gemini-cli](https://github.com/google-gemini/gemini-cli) for Obsidian** — an AI-powered assistant with 27+ comprehensive vault tools for navigation, search, file management, and knowledge organization. Features **Model Context Protocol (MCP) support** for extending capabilities with external tools and services. Currently powered by Google Gemini with support for multiple AI models. **Available on Desktop and Mobile**.
 
 ## Features
 
@@ -11,13 +11,14 @@
 - Multi-turn conversations with full context retention
 - Support for future AI model integrations
 
-### 🔧 Comprehensive Tool System (26+ Tools)
+### 🔧 Comprehensive Tool System (27+ Tools)
 
-#### **Core File Operations (5)**
+#### **Core File Operations (6)**
 - **read_file** - Read file contents
 - **list_files** - List vault files  
 - **read_many_files** - Read multiple files with glob patterns
 - **write_file** - Create/modify files (auto-sanitizes filenames)
+- **edit_file** - Make semantic, context-aware edits (add to lists, insert at sections, replace patterns)
 - **web_fetch** - Fetch web content with redirect support
 
 #### **Web & Search (1)**
@@ -100,10 +101,17 @@
 
 ## Installation
 
+### Desktop
 1. Copy this folder to `.obsidian/plugins/gemini-assistant/`
 2. Run `npm install` to install dependencies
 3. Run `npm run build` to compile
 4. Enable the plugin in Obsidian settings
+
+### Mobile
+1. Install the plugin on desktop first (follow desktop installation steps)
+2. Sync your vault to mobile (via Obsidian Sync or manual sync)
+3. Enable the plugin in mobile Obsidian settings
+4. The plugin works on both iOS and Android
 
 ## Configuration
 

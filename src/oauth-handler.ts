@@ -1,7 +1,5 @@
 import { Notice } from 'obsidian';
 import { OAuth2Client } from 'google-auth-library';
-import * as http from 'http';
-import { URL } from 'url';
 import { Logger } from './utils/logger';
 
 /**
@@ -111,11 +109,36 @@ export class OAuthHandler {
 	private authCode: string | null = null;
 	
 	/**
-	 * Start local HTTP server to handle OAuth callback
+	 * Check if Node.js http module is available (desktop only)
 	 */
-	private async startLocalServer(): Promise<{ server: http.Server; port: number }> {
+	private isHttpAvailable(): boolean {
+		try {
+			// Try to require http module (only available on desktop)
+			if (typeof require !== 'undefined') {
+				require('http');
+				return true;
+			}
+			return false;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	/**
+	 * Start local HTTP server to handle OAuth callback
+	 * Desktop only - mobile requires manual code entry
+	 */
+	private async startLocalServer(): Promise<{ server: any; port: number }> {
+		// Check if we're on mobile (http module not available)
+		if (!this.isHttpAvailable()) {
+			throw new Error('OAuth local server requires desktop environment. On mobile, please use API key authentication or enter the authorization code manually.');
+		}
+
+		// Dynamic require for http module (only executed on desktop)
+		const http = require('http');
+		
 		return new Promise((resolve, reject) => {
-			const server = http.createServer((req, res) => {
+			const server = http.createServer((req: any, res: any) => {
 				if (!req.url) {
 					return;
 				}
@@ -200,18 +223,30 @@ export class OAuthHandler {
 	
 	/**
 	 * Open browser to authorization URL
+	 * Works on both desktop (Electron) and mobile
 	 */
 	private openBrowser(authUrl: string): void {
 		Logger.debug('OAuth', ' Opening browser for authentication...');
 		new Notice('Opening browser for Google authentication...');
 		
-		// Use Electron's shell to open URL
-		if (typeof window !== 'undefined' && (window as any).require) {
-			const { shell } = (window as any).require('electron');
-			shell.openExternal(authUrl);
-		} else {
-			// Fallback for non-Electron environments
+		// Try Electron's shell first (desktop)
+		try {
+			if (typeof window !== 'undefined' && (window as any).require) {
+				const { shell } = (window as any).require('electron');
+				shell.openExternal(authUrl);
+				return;
+			}
+		} catch (error) {
+			// Electron not available, continue to fallback
+		}
+		
+		// Fallback for mobile and non-Electron environments
+		if (typeof window !== 'undefined' && window.open) {
 			window.open(authUrl, '_blank');
+		} else {
+			// Last resort: show URL in notice
+			new Notice(`Please open this URL: ${authUrl}`);
+			Logger.warn('OAuth', 'Could not open browser automatically. Please open URL manually.');
 		}
 	}
 	

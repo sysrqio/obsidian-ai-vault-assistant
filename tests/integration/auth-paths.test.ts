@@ -323,5 +323,199 @@ describe('Authentication Paths - Live Credentials', () => {
 		// Should have exactly one user message
 		expect(userMessages.length).toBe(1);
 	}, 60000);
+
+	test('API Key path - should handle tool execution with follow-up structure', async () => {
+		if (!testCredentials?.apiKey) {
+			console.log('⏭️  Skipping API Key follow-up test - no API key in data.json');
+			return;
+		}
+
+		const settings = {
+			...testCredentials,
+			useOAuth: false,
+			apiKey: testCredentials.apiKey,
+			model: 'gemini-2.5-flash',
+			enableFileTools: true,
+			toolPermissions: {
+				...testCredentials.toolPermissions,
+				get_active_file: 'always' as const,
+				read_file: 'always' as const,
+			}
+		};
+
+		const client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, app);
+		await client.initialize();
+
+		// Use a message that will trigger tool calls
+		const testMessageWithTool = 'review the open file and generate tags for the file. add these tags to the frontmatter';
+		
+		const responses: string[] = [];
+		let hasError = false;
+		let errorMessage = '';
+		let receivedToolCalls = false;
+		let receivedFollowUpText = false;
+
+		try {
+			const generator = client.sendMessage(testMessageWithTool);
+
+			for await (const response of generator) {
+				if (response.text) {
+					responses.push(response.text);
+					receivedFollowUpText = true;
+				}
+				if (response.toolCalls && response.toolCalls.length > 0) {
+					receivedToolCalls = true;
+					console.log('✅ Tool calls received:', response.toolCalls.map((tc: any) => tc.name));
+				}
+				if (response.done) {
+					break;
+				}
+			}
+		} catch (error: any) {
+			hasError = true;
+			errorMessage = error.message || String(error);
+			console.error('API Key follow-up test error:', error);
+		}
+
+		// Check for specific error about function response structure
+		if (errorMessage.includes('function response turn comes immediately after a function call turn')) {
+			throw new Error(`Function response structure error: ${errorMessage}`);
+		}
+
+		expect(hasError).toBe(false);
+		
+		// Should have received tool calls
+		expect(receivedToolCalls).toBe(true);
+		
+		// Should have received follow-up text after tool execution
+		expect(receivedFollowUpText).toBe(true);
+		
+		// Should have some response text
+		const responseText = responses.join('');
+		expect(responseText.length).toBeGreaterThan(0);
+
+		// Verify history structure is correct
+		const historyManager = (client as any).historyManager;
+		const history = historyManager.getHistory();
+		
+		// Should have user message, model response with function calls, and tool responses
+		expect(history.length).toBeGreaterThan(0);
+		
+		// Find model response with function calls
+		const modelResponseWithFunctionCalls = history.find((h: any) => 
+			h.role === 'model' && 
+			h.parts?.some((p: any) => p.functionCall)
+		);
+		expect(modelResponseWithFunctionCalls).toBeDefined();
+		
+		// Find tool responses (should be user message with functionResponse)
+		const toolResponses = history.find((h: any) => 
+			h.role === 'user' && 
+			h.parts?.some((p: any) => p.functionResponse)
+		);
+		expect(toolResponses).toBeDefined();
+	}, 60000);
+
+	test('OAuth path - should handle tool execution with follow-up structure', async () => {
+		if (!testCredentials?.useOAuth || !testCredentials?.oauthAccessToken) {
+			console.log('⏭️  Skipping OAuth follow-up test - no OAuth credentials in data.json');
+			return;
+		}
+
+		const settings = {
+			...testCredentials,
+			useOAuth: true,
+			oauthClientId: testCredentials.oauthClientId,
+			oauthClientSecret: testCredentials.oauthClientSecret,
+			oauthAccessToken: testCredentials.oauthAccessToken,
+			oauthRefreshToken: testCredentials.oauthRefreshToken,
+			oauthExpiresAt: testCredentials.oauthExpiresAt || Date.now() + 3600000,
+			apiKey: '',
+			model: 'gemini-2.5-pro',
+			enableFileTools: true,
+			toolPermissions: {
+				...testCredentials.toolPermissions,
+				get_active_file: 'always' as const,
+				read_file: 'always' as const,
+			}
+		};
+
+		const client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, app);
+		await client.initialize();
+
+		// Use a message that will trigger tool calls
+		const testMessageWithTool = 'review the open file and generate tags for the file. add these tags to the frontmatter';
+		
+		const responses: string[] = [];
+		let hasError = false;
+		let errorMessage = '';
+		let receivedToolCalls = false;
+		let receivedFollowUpText = false;
+
+		try {
+			const generator = client.sendMessage(testMessageWithTool);
+
+			for await (const response of generator) {
+				if (response.text) {
+					responses.push(response.text);
+					receivedFollowUpText = true;
+				}
+				if (response.toolCalls && response.toolCalls.length > 0) {
+					receivedToolCalls = true;
+					console.log('✅ Tool calls received:', response.toolCalls.map((tc: any) => tc.name));
+				}
+				if (response.done) {
+					break;
+				}
+			}
+		} catch (error: any) {
+			hasError = true;
+			errorMessage = error.message || String(error);
+			console.error('OAuth follow-up test error:', error);
+		}
+
+		// Check for specific OAuth tools format errors
+		if (errorMessage.includes('functionDeclarations') || errorMessage.includes('function_declarations')) {
+			throw new Error(`OAuth tools format error: ${errorMessage}`);
+		}
+
+		// Check for specific error about function response structure
+		if (errorMessage.includes('function response turn comes immediately after a function call turn')) {
+			throw new Error(`Function response structure error: ${errorMessage}`);
+		}
+
+		expect(hasError).toBe(false);
+		
+		// Should have received tool calls
+		expect(receivedToolCalls).toBe(true);
+		
+		// Should have received follow-up text after tool execution
+		expect(receivedFollowUpText).toBe(true);
+		
+		// Should have some response text
+		const responseText = responses.join('');
+		expect(responseText.length).toBeGreaterThan(0);
+
+		// Verify history structure is correct
+		const historyManager = (client as any).historyManager;
+		const history = historyManager.getHistory();
+		
+		// Should have user message, model response with function calls, and tool responses
+		expect(history.length).toBeGreaterThan(0);
+		
+		// Find model response with function calls
+		const modelResponseWithFunctionCalls = history.find((h: any) => 
+			h.role === 'model' && 
+			h.parts?.some((p: any) => p.functionCall)
+		);
+		expect(modelResponseWithFunctionCalls).toBeDefined();
+		
+		// Find tool responses (should be user message with functionResponse)
+		const toolResponses = history.find((h: any) => 
+			h.role === 'user' && 
+			h.parts?.some((p: any) => p.functionResponse)
+		);
+		expect(toolResponses).toBeDefined();
+	}, 60000);
 });
 

@@ -708,26 +708,30 @@ export class GeminiSettingTab extends PluginSettingTab {
 		Logger.info('OAuth Test', '🧪 Testing via DirectGeminiAPIClient (gemini-cli format)...');
 		Logger.info('OAuth Test', 'Flow: userinfo → loadCodeAssist → generateContent');
 		
-		if (!this.plugin.geminiClient || !this.plugin.geminiClient['directAPIClient']) {
-			new Notice('❌ OAuth Direct API client not initialized. Please authenticate first.');
+		if (!this.plugin.geminiClient || !this.plugin.geminiClient['apiClient']) {
+			new Notice('❌ OAuth API client not initialized. Please authenticate first.');
 			return;
 		}
 		
-		const directClient = this.plugin.geminiClient['directAPIClient'];
+		const apiClient = this.plugin.geminiClient['apiClient'];
 		
 		// This will automatically call:
 		// 1. fetchUserInfo() - GET /oauth2/v2/userinfo
 		// 2. loadCodeAssist() - POST /v1internal:loadCodeAssist  
 		// 3. streamGenerateContent - POST /v1internal:streamGenerateContent
-		const resp = await directClient.generateContent(
+		let responseText = '';
+		for await (const chunk of apiClient.streamGenerateContent(
 			'gemini-2.5-flash',
 			[{ role: 'user', parts: [{ text: 'Hello! Just testing the OAuth API. Please respond with "OK".' }] }],
-			'',
-			[],
 			{ temperature: 0.7, maxOutputTokens: 128 }
-		);
+		)) {
+			if (chunk.text) {
+				responseText += chunk.text;
+			}
+			if (chunk.done) break;
+		}
 		
-		const text = resp?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text';
+		const text = responseText || 'No response text';
 		Logger.info('OAuth Test', `✅ Test successful! Response: ${text.substring(0, 50)}...`);
 		new Notice(`✅ OAuth API test successful! Response: ${text.substring(0, 50)}...`);
 		} catch (error) {

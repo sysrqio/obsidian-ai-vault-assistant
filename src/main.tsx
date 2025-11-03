@@ -162,7 +162,7 @@ export default class GeminiPlugin extends Plugin {
 		if (this.vaultAdapter && this.geminiClient) {
 			const vaultPath = (this.app.vault.adapter as any).basePath || '';
 			const pluginDataPath = this.manifest.dir || this.app.vault.configDir + '/plugins/gemini-assistant';
-			this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app);
+			this.geminiClient = new GeminiClient(this.settings, this.vaultAdapter, vaultPath, pluginDataPath, this.app, this);
 			
 			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINI);
 			leaves.forEach(leaf => {

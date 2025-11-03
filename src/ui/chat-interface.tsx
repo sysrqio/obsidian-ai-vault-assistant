@@ -274,7 +274,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 													>
 														✏️
 													</button>
-													<button
+				<button 
 														onClick={() => handleDeleteClick(history.id)}
 														style={{
 															padding: '4px 8px',
@@ -287,7 +287,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 														title="Delete"
 													>
 														🗑️
-													</button>
+				</button>
 												</div>
 											</div>
 										</div>

@@ -369,7 +369,7 @@ export class DirectGeminiAPIClient {
 			// Process each chunk's parts
 			if (chunk.candidates?.[0]?.content?.parts) {
 				for (const part of chunk.candidates[0].content.parts) {
-					// Accumulate text from each chunk
+			// Accumulate text from each chunk
 					if (part.text) {
 						combinedText += part.text;
 					}
@@ -612,15 +612,15 @@ export class DirectGeminiAPIClient {
 		// No quota header needed for Code Assist API
 
 		const requestBody: any = {
-			contents: contents.map(c => ({
-				role: c.role,
-				parts: c.parts?.map(p => ({ text: p.text })) || []
-			})),
-			generationConfig: {
-				temperature: 0.7,
-				maxOutputTokens: 8192,
-			},
-			tools: [{ functionDeclarations: functionDeclarations }]
+				contents: contents.map(c => ({
+					role: c.role,
+					parts: c.parts?.map(p => ({ text: p.text })) || []
+				})),
+				generationConfig: {
+					temperature: 0.7,
+					maxOutputTokens: 8192,
+				},
+				tools: [{ functionDeclarations: functionDeclarations }]
 		};
 
 		// Add system instruction if provided

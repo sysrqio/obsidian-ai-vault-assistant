@@ -1143,10 +1143,11 @@ export class GeminiClient {
 				const sourcesList = sources.map((source: any, index: number) => {
 					const title = source.web?.title || 'Untitled';
 					const uri = source.web?.uri || 'No URI';
-					return `[${index + 1}] ${title}\n    ${uri}`;
+					// Format as Obsidian markdown link: [Link text](url)
+					return `[${index + 1}] [${title}](${uri})`;
 				});
 
-				formattedResponse += '\n\nSources:\n' + sourcesList.join('\n');
+				formattedResponse += '\n\n**Sources:**\n\n' + sourcesList.join('\n');
 			}
 
 			Logger.debug('GoogleSearch', `Success: ${responseText.length} chars, ${sources.length} sources`);
@@ -1780,17 +1781,10 @@ export class GeminiClient {
                                         // First yield the tool execution info
                                         yield { text: '', done: false, toolCalls: [toolCall] };
 
-                                        // Optionally render tool result. For verbose tools like search_vault,
-                                        // we do NOT render the raw result and only send it to the model.
-                                        // Suppress result rendering for all tools except google_web_search.
-                                        // The result is still passed to the model via functionResponse; only the model's reply is shown.
-                                        const suppressResultRender = toolCall.name !== 'google_web_search';
-                                        if (!suppressResultRender) {
-                                            // Then yield the tool result as a separate chat message
-                                            yield { text: toolResult, done: false, isFollowUp: true };
-                                        } else {
-                                            Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
-                                        }
+                                        // Suppress result rendering for all tools. The result is still passed to the model
+                                        // via functionResponse; only the model's reply is shown. This prevents duplication
+                                        // where both the raw tool result and the model's response incorporating it are displayed.
+                                        Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
                                     } else {
                                         Logger.debug('Gemini', 'Tool rejected by user');
                                         toolCall.status = 'rejected';
@@ -2142,17 +2136,10 @@ export class GeminiClient {
 							// Yield tool call as separate chat bubble (action)
 							yield { text: '', done: false, toolCalls: [toolCall] };
 
-							// Optionally render tool result. For verbose tools like search_vault,
-							// we do NOT render the raw result and only send it to the model.
-							// Suppress result rendering for all tools except google_web_search.
-							// The result is still passed to the model via functionResponse; only the model's reply is shown.
-							const suppressResultRender = toolCall.name !== 'google_web_search';
-							if (!suppressResultRender) {
-								// Then yield the tool result as a separate chat message
-								yield { text: toolResult, done: false, isFollowUp: true };
-							} else {
-								Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
-							}
+							// Suppress result rendering for all tools. The result is still passed to the model
+							// via functionResponse; only the model's reply is shown. This prevents duplication
+							// where both the raw tool result and the model's response incorporating it are displayed.
+							Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
 
 							toolResponses.push({
 								name: toolCall.name,

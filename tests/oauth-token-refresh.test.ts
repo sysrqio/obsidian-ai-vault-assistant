@@ -195,28 +195,28 @@ describe('OAuth Token Refresh', () => {
 		Logger.error = mockError;
 
 		try {
-			// Mock OAuthHandler to throw error
-			const mockInitialize = jest.fn().mockResolvedValue(undefined);
-			const mockRefreshToken = jest.fn().mockRejectedValue(new Error('Refresh failed'));
-			
-			jest.spyOn(OAuthHandler.prototype, 'initialize').mockImplementation(mockInitialize);
-			jest.spyOn(OAuthHandler.prototype, 'refreshToken').mockImplementation(mockRefreshToken);
+		// Mock OAuthHandler to throw error
+		const mockInitialize = jest.fn().mockResolvedValue(undefined);
+		const mockRefreshToken = jest.fn().mockRejectedValue(new Error('Refresh failed'));
+		
+		jest.spyOn(OAuthHandler.prototype, 'initialize').mockImplementation(mockInitialize);
+		jest.spyOn(OAuthHandler.prototype, 'refreshToken').mockImplementation(mockRefreshToken);
 
-			// Create client with expired token
-			const settings = {
-				...mockOAuthSettings,
-				oauthExpiresAt: Date.now() - 3600000 // Expired
-			};
+		// Create client with expired token
+		const settings = {
+			...mockOAuthSettings,
+			oauthExpiresAt: Date.now() - 3600000 // Expired
+		};
 
-			client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);
-			
-			// Access private method for testing
-			const ensureValidOAuthToken = (client as any).ensureValidOAuthToken.bind(client);
-			
-			// Should throw error with proper message
-			await expect(ensureValidOAuthToken()).rejects.toThrow(
-				'OAuth token refresh failed: Refresh failed'
-			);
+		client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);
+		
+		// Access private method for testing
+		const ensureValidOAuthToken = (client as any).ensureValidOAuthToken.bind(client);
+		
+		// Should throw error with proper message
+		await expect(ensureValidOAuthToken()).rejects.toThrow(
+			'OAuth token refresh failed: Refresh failed'
+		);
 
 			// Verify error was logged (but we suppressed console.error)
 			expect(mockError).toHaveBeenCalled();

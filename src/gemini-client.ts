@@ -15,6 +15,7 @@ import { getEffectiveModel, getFallbackModel } from './utils/model-selection';
 import { OAuthHandler } from './oauth-handler';
 import { DirectGeminiAPIClient } from './gemini-api-client';
 import { MemoryManager } from './memory-manager';
+import { ChatHistoryManager } from './history/chat-history-manager';
 import { VaultTools } from './vault-tools';
 import { Logger } from './utils/logger';
 import type { App } from 'obsidian';
@@ -54,10 +55,13 @@ export class GeminiClient {
 	private tools: Tool[] = [];
 	private toolApprovalHandler: ToolApprovalHandler | null = null;
 	private memoryManager: MemoryManager;
+	private chatHistoryManager: ChatHistoryManager;
 	private vaultTools: VaultTools;
 	private app: App;
 	private plugin: any = null; // Reference to the plugin instance
 	private functionDeclarations: any[] = []; // Store function declarations for API calls
+	private currentHistoryId: string | null = null;
+	private pluginDataPath: string;
 
 	constructor(settings: GeminiSettings, vaultAdapter: VaultAdapter, vaultPath: string, pluginDataPath: string, app: App, plugin?: any) {
 		this.settings = settings;
@@ -65,7 +69,9 @@ export class GeminiClient {
 		this.vaultPath = vaultPath;
 		this.app = app;
 		this.plugin = plugin; // Store plugin reference
+		this.pluginDataPath = pluginDataPath;
 		this.memoryManager = new MemoryManager(vaultAdapter.vault.adapter, pluginDataPath);
+		this.chatHistoryManager = new ChatHistoryManager(vaultAdapter.vault.adapter, pluginDataPath);
 		this.vaultTools = new VaultTools(app, vaultAdapter);
 	}
 
@@ -81,6 +87,14 @@ export class GeminiClient {
 	}
 
 	async initialize(): Promise<void> {
+		// Initialize chat history manager
+		await this.chatHistoryManager.loadManifest();
+		
+		// Cleanup old histories if max count is set
+		if (this.settings.maxChatHistories && this.settings.maxChatHistories > 0) {
+			await this.chatHistoryManager.cleanupOldHistories(this.settings.maxChatHistories);
+		}
+		
 		const originalGcpProject = process.env.GOOGLE_CLOUD_PROJECT;
 		const originalGcpLocation = process.env.GOOGLE_CLOUD_LOCATION;
 		const originalUseVertexAI = process.env.GOOGLE_GENAI_USE_VERTEXAI;
@@ -1557,6 +1571,13 @@ export class GeminiClient {
 			}
 		}
 
+		// Auto-create history when currentHistoryId is null and history is empty
+		if (this.currentHistoryId === null && this.history.length === 0) {
+			const history = await this.chatHistoryManager.createHistory(undefined, []);
+			this.currentHistoryId = history.id;
+			Logger.debug('Gemini', 'Auto-created new history: ' + this.currentHistoryId);
+		}
+
 		// Ensure OAuth token is fresh before making API calls
 		if (this.settings.useOAuth) {
 			await this.ensureValidOAuthToken();
@@ -1580,20 +1601,22 @@ export class GeminiClient {
 				role: 'user',
 				parts: [{ text: userMessage }]
 			});
+			// Log detailed history breakdown for debugging
+			Logger.debug('Gemini', '📋 History breakdown:');
+			this.history.forEach((item, idx) => {
+				const role = item.role;
+				const hasText = item.parts?.some(p => p.text) || false;
+				const hasFunctionCall = item.parts?.some(p => p.functionCall) || false;
+				const hasFunctionResponse = item.parts?.some(p => (p as any).functionResponse) || false;
+				Logger.debug('Gemini', `  [${idx}] ${role}: text=${hasText}, functionCall=${hasFunctionCall}, functionResponse=${hasFunctionResponse}`);
+			});
 		} else {
-			// For first message with SDK (non-OAuth), prepend system prompt to user message
-			// For Direct API (OAuth), system prompt is sent separately as system_instruction
-			if (usingDirectAPI) {
-				contents.push({
-					role: 'user',
-					parts: [{ text: userMessage }]
-				});
-			} else {
-				contents.push({
-					role: 'user',
-					parts: [{ text: systemPrompt + '\n\n' + userMessage }]
-				});
-			}
+			// For first message, add user message to contents
+			// System instruction is sent separately (in config for SDK, in request for Direct API)
+			contents.push({
+				role: 'user',
+				parts: [{ text: userMessage }]
+			});
 		}
 
 		const effectiveModel = getEffectiveModel(this.settings.fallbackMode, this.settings.model);
@@ -1603,6 +1626,7 @@ export class GeminiClient {
 		Logger.debug('Gemini', 'Effective model:', effectiveModel);
 		Logger.debug('Gemini', 'Tools enabled:', this.tools.length > 0);
 		Logger.debug('Gemini', 'Total contents in request:', contents.length);
+		Logger.debug('Gemini', '📤 Contents array breakdown:', contents.map((c, idx) => `[${idx}] ${c.role}`).join(', '));
 
 		Logger.debug('Gemini', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 		Logger.debug('Gemini', '📤 REQUEST DETAILS:');
@@ -1627,7 +1651,8 @@ export class GeminiClient {
 					effectiveModel,
 					contents,
 					userMessage,
-					this.functionDeclarations
+					this.functionDeclarations,
+					systemPrompt
 				);
 				
 				// Process Direct API response directly (no streaming needed)
@@ -1637,11 +1662,21 @@ export class GeminiClient {
 					const candidate = response.candidates[0];
 					if (candidate.content && candidate.content.parts) {
 						let accumulatedText = '';
-						const toolCalls: ToolCall[] = [];
+						let toolCalls: ToolCall[] = [];
 						
 						for (const part of candidate.content.parts) {
 							if (part.text) {
 								accumulatedText += part.text;
+							} else if ((part as any).thoughtSignature) {
+								// OAuth API sometimes returns thoughtSignature instead of text
+								// The actual text should be in the response, but if not, we need to make a follow-up call
+								// For now, log it and skip - we'll need to handle this differently
+								Logger.debug('Gemini', '⚠️ Found thoughtSignature in response part, but no text content');
+								Logger.debug('Gemini', 'Part keys:', Object.keys(part));
+								// Check if there's a text field we're missing
+								if ((part as any).text) {
+									accumulatedText += (part as any).text;
+								}
 							} else if (part.functionCall) {
 								toolCalls.push({
 									name: part.functionCall.name,
@@ -1677,114 +1712,228 @@ export class GeminiClient {
 							});
 						}
 						
-						// Yield the complete response
-						if (accumulatedText) {
-							yield { text: accumulatedText, done: false, toolCalls: toolCalls.length > 0 ? toolCalls : undefined };
-						}
-						
-                        // Process tool calls if any
+						// Process tool calls if any
                         if (toolCalls.length > 0) {
-                            for (const toolCall of toolCalls) {
-								try {
-									const result = await this.executeTool(toolCall.name, toolCall.args);
-									toolCall.status = 'executed';
-									toolCall.result = result;
-									
-									// Add tool response to history as USER message (following gemini-cli pattern)
-									this.history.push({
-										role: 'user',
-										parts: [{ 
-											functionResponse: {
-												name: toolCall.name,
-												response: { result: result }
-											}
-										}]
-									});
-									
-                                // First yield the tool execution info
-                                yield { text: '', done: false, toolCalls: [toolCall] };
+                            // Don't yield tool calls here - they'll be yielded when executed in the loop
+                            // Only yield text if present (tool calls will be handled in the loop)
+                            if (accumulatedText) {
+                                yield {
+                                    text: accumulatedText,
+                                    done: false
+                                };
+                            }
 
-                                // Optionally render tool result. For verbose tools like search_vault,
-                                // we do NOT render the raw result and only send it to the model.
-                                // Suppress result rendering for all tools except google_web_search.
-                                // The result is still passed to the model via functionResponse; only the model's reply is shown.
-                                const suppressResultRender = toolCall.name !== 'google_web_search';
-                                if (!suppressResultRender) {
-                                    // Then yield the tool result as a separate chat message
-                                    yield { text: result, done: false, isFollowUp: true };
-                                } else {
-                                    Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
-                                }
-								} catch (error) {
-									toolCall.status = 'rejected';
-									toolCall.error = (error as Error).message;
-									yield { text: '', done: false, toolCalls: [toolCall] };
-								}
-							}
-                            
-                            // After executing tools, send a follow-up request so the model can respond to the tool results
-                            try {
-                                Logger.debug('Gemini', '📨 Sending follow-up after tool execution (Direct API)...');
-                                Logger.debug('Gemini', '🔍 History before follow-up (last 2 items):', JSON.stringify(this.history.slice(-2), null, 2));
+                            // Loop to handle multiple rounds of tool execution (similar to SDK path)
+                            for (let turn = 1; turn <= 10; turn++) {
+                                Logger.debug('Gemini', `🔄 Turn ${turn}: Tool responses present, making follow-up call...`);
 
-                                const clonedHistory = this.history.map(content => ({
-                                    role: content.role,
-                                    parts: content.parts?.map(part => {
-                                        if (part.text !== undefined) return { text: part.text };
-                                        if (part.functionCall) return { 
-                                            functionCall: {
-                                                name: part.functionCall.name,
-                                                args: part.functionCall.args
-                                            }
-                                        };
-                                        if (part.functionResponse) return {
-                                            functionResponse: {
-                                                name: part.functionResponse.name,
-                                                response: part.functionResponse.response
-                                            }
-                                        };
-                                        return { ...part };
-                                    }) || []
-                                }));
+                                // Execute all tool calls from previous turn
+                                for (const toolCall of toolCalls) {
+                                    Logger.debug('Gemini', '🔧 Follow-up tool call:', toolCall.name);
 
-                                const followUpResponse = await this.directAPIClient!.generateContent(
-                                    effectiveModel,
-                                    clonedHistory as Content[],
-                                    systemPrompt,
-                                    this.tools,
-                                    {
-                                        temperature: this.settings.temperature,
-                                        maxOutputTokens: this.settings.maxTokens
-                                    }
-                                );
+                                    // Check tool permission (works for both normal tools and MCP tools)
+                                    const toolPermission = this.settings.toolPermissions[toolCall.name as keyof typeof this.settings.toolPermissions];
+                                    
+                                    Logger.debug('Gemini', 'Tool permission:', toolPermission);
 
-                                if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
-                                    const candidate = followUpResponse.candidates[0];
-                                    if (candidate.content && candidate.content.parts) {
-                                        let followUpText = '';
-                                        for (const part of candidate.content.parts) {
-                                            if (part.text) {
-                                                followUpText += part.text;
-                                            }
+                                    let approved: boolean;
+                                    
+                                    // Apply tool permission
+                                    if (toolPermission === 'always') {
+                                        Logger.debug('Gemini', '✅ Tool always allowed by permission');
+                                        approved = true;
+                                    } else if (toolPermission === 'never') {
+                                        Logger.debug('Gemini', '❌ Tool never allowed by permission');
+                                        approved = false;
+                                    } else {
+                                        // Permission is 'ask' - request user approval
+                                        if (this.toolApprovalHandler) {
+                                            Logger.debug('Gemini', 'Requesting user approval for tool:', toolCall.name);
+                                            approved = await this.toolApprovalHandler(toolCall.name, toolCall.args);
+                                        } else {
+                                            Logger.debug('Gemini', '⚠️  No approval handler, rejecting tool');
+                                            approved = false;
                                         }
+                                    }
 
-                                        if (followUpText) {
+                                    if (approved) {
+                                        Logger.debug('Gemini', '✅ Executing tool:', toolCall.name);
+
+                                        toolCall.status = 'approved';
+                                        const toolResult = await this.executeTool(toolCall.name, toolCall.args);
+                                        toolCall.status = 'executed';
+                                        toolCall.result = toolResult;
+
+                                        Logger.debug('Gemini', 'Tool result:', toolResult.substring(0, 200) + (toolResult.length > 200 ? '...' : ''));
+
+                                        // Add tool response to history as USER message (following gemini-cli pattern)
+                                        this.history.push({
+                                            role: 'user',
+                                            parts: [{ 
+                                                functionResponse: {
+                                                    name: toolCall.name,
+                                                    response: { result: toolResult }
+                                                }
+                                            }]
+                                        });
+
+                                        // First yield the tool execution info
+                                        yield { text: '', done: false, toolCalls: [toolCall] };
+
+                                        // Optionally render tool result. For verbose tools like search_vault,
+                                        // we do NOT render the raw result and only send it to the model.
+                                        // Suppress result rendering for all tools except google_web_search.
+                                        // The result is still passed to the model via functionResponse; only the model's reply is shown.
+                                        const suppressResultRender = toolCall.name !== 'google_web_search';
+                                        if (!suppressResultRender) {
+                                            // Then yield the tool result as a separate chat message
+                                            yield { text: toolResult, done: false, isFollowUp: true };
+                                        } else {
+                                            Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
+                                        }
+                                    } else {
+                                        Logger.debug('Gemini', 'Tool rejected by user');
+                                        toolCall.status = 'rejected';
+                                        toolCall.error = 'User rejected tool execution';
+
+                                        // Add rejected tool response to history
+                                        this.history.push({
+                                            role: 'user',
+                                            parts: [{ 
+                                                functionResponse: {
+                                                    name: toolCall.name,
+                                                    response: { error: 'User rejected tool execution' }
+                                                }
+                                            }]
+                                        });
+
+                                        yield { text: '', done: false, toolCalls: [toolCall] };
+                                    }
+                                }
+                                
+                                // After executing tools, send a follow-up request so the model can respond to the tool results
+                                try {
+                                    Logger.debug('Gemini', '📨 Sending follow-up after tool execution (Direct API)...');
+                                    Logger.debug('Gemini', '🔍 History before follow-up (last 2 items):', JSON.stringify(this.history.slice(-2), null, 2));
+
+                                    const clonedHistory = this.history.map(content => ({
+                                        role: content.role,
+                                        parts: content.parts?.map(part => {
+                                            if (part.text !== undefined) return { text: part.text };
+                                            if (part.functionCall) return { 
+                                                functionCall: {
+                                                    name: part.functionCall.name,
+                                                    args: part.functionCall.args
+                                                }
+                                            };
+                                            if (part.functionResponse) return {
+                                                functionResponse: {
+                                                    name: part.functionResponse.name,
+                                                    response: part.functionResponse.response
+                                                }
+                                            };
+                                            return { ...part };
+                                        }) || []
+                                    }));
+
+                                    const followUpResponse = await this.directAPIClient!.generateContent(
+                                        effectiveModel,
+                                        clonedHistory as Content[],
+                                        systemPrompt,
+                                        this.tools,
+                                        {
+                                            temperature: this.settings.temperature,
+                                            maxOutputTokens: this.settings.maxTokens
+                                        }
+                                    );
+
+                                    if (followUpResponse.candidates && followUpResponse.candidates.length > 0) {
+                                        const candidate = followUpResponse.candidates[0];
+                                        if (candidate.content && candidate.content.parts) {
+                                            let followUpText = '';
+                                            const followUpToolCalls: ToolCall[] = [];
+                                            
+                                            Logger.debug('Gemini', '🔍 Follow-up response parts count:', candidate.content.parts.length);
+                                            for (const part of candidate.content.parts) {
+                                                Logger.debug('Gemini', '🔍 Part keys:', Object.keys(part));
+                                                if (part.text) {
+                                                    followUpText += part.text;
+                                                    Logger.debug('Gemini', '🔍 Found text part:', part.text.substring(0, 100));
+                                                }
+                                                if (part.functionCall) {
+                                                    Logger.debug('Gemini', '🔍 Found functionCall part:', part.functionCall.name);
+                                                    followUpToolCalls.push({
+                                                        name: part.functionCall.name,
+                                                        args: part.functionCall.args || {},
+                                                        status: 'pending'
+                                                    });
+                                                }
+                                                // Also check for functionCall at root level (some responses might have it differently structured)
+                                                if ((part as any).functionCall && !part.functionCall) {
+                                                    Logger.debug('Gemini', '🔍 Found functionCall at root level:', (part as any).functionCall.name);
+                                                    followUpToolCalls.push({
+                                                        name: (part as any).functionCall.name,
+                                                        args: (part as any).functionCall.args || {},
+                                                        status: 'pending'
+                                                    });
+                                                }
+                                            }
+                                            
+                                            Logger.debug('Gemini', '🔍 Follow-up tool calls detected:', followUpToolCalls.length);
+
                                             // Add follow-up response to history
-                                            this.history.push({
-                                                role: 'model',
-                                                parts: [{ text: followUpText }]
-                                            });
+                                            const followUpParts: any[] = [];
+                                            if (followUpText) {
+                                                followUpParts.push({ text: followUpText });
+                                            }
+                                            for (const toolCall of followUpToolCalls) {
+                                                followUpParts.push({
+                                                    functionCall: {
+                                                        name: toolCall.name,
+                                                        args: toolCall.args
+                                                    }
+                                                });
+                                            }
+                                            
+                                            if (followUpParts.length > 0) {
+                                                this.history.push({
+                                                    role: 'model',
+                                                    parts: followUpParts
+                                                });
+                                            }
 
-                                            Logger.debug('Gemini', '📝 Follow-up model response (Direct API):', followUpText.substring(0, 200));
-                                            yield { text: followUpText, done: true };
+                                            // Yield any text response (but NOT tool calls - they'll be yielded when executed)
+                                            if (followUpText) {
+                                                Logger.debug('Gemini', '📝 Follow-up model response (Direct API):', followUpText.substring(0, 200));
+                                                yield { text: followUpText, done: false };
+                                            }
+
+                                            // If there are more tool calls, continue the loop (they'll be yielded when executed)
+                                            if (followUpToolCalls.length > 0) {
+                                                toolCalls = followUpToolCalls;
+                                                Logger.debug('Gemini', `🔄 More tool calls detected (${followUpToolCalls.length}), continuing loop...`);
+                                                Logger.debug('Gemini', '🔄 Tool calls:', followUpToolCalls.map(tc => tc.name).join(', '));
+                                                continue; // Continue to next iteration of the loop
+                                            } else {
+                                                // No more tool calls, we're done
+                                                Logger.debug('Gemini', '✅ No more tool calls, ending loop');
+                                                // Auto-save history after message exchange completes
+                                                await this.saveCurrentHistory();
+                                                yield { text: followUpText || '', done: true };
+                                                break; // Exit the loop
+                                            }
                                         }
                                     }
+                                } catch (error) {
+                                    Logger.error('Gemini', 'Follow-up after tool execution failed (Direct API):', error);
+                                    break; // Exit loop on error
                                 }
-                            } catch (error) {
-                                Logger.error('Gemini', 'Follow-up after tool execution failed (Direct API):', error);
                             }
 						} else {
 							// No tool calls, just yield the response as done
+							// Auto-save history after message exchange completes
+							await this.saveCurrentHistory();
+							
 							yield { text: accumulatedText, done: true };
 						}
 					}
@@ -1797,6 +1946,12 @@ export class GeminiClient {
 					temperature: this.settings.temperature,
 					maxOutputTokens: this.settings.maxTokens,
 				};
+				
+				// Add system instruction to config (SDK supports this)
+				if (systemPrompt && contents.length === 1 && contents[0].role === 'user') {
+					// Only add system instruction for first message (when history is empty)
+					config.systemInstruction = systemPrompt;
+				}
 				
 				if (this.tools.length > 0) {
 					config.tools = this.tools;
@@ -1932,11 +2087,14 @@ export class GeminiClient {
 			Logger.debug('Gemini', 'History length (after update):', this.history.length);
 
 			if (currentToolCalls.length > 0) {
-				yield {
-					text: accumulatedText,
-					done: false,
-					toolCalls: currentToolCalls
-				};
+				// Don't yield tool calls here - they'll be yielded when executed in the loop
+				// Only yield text if present (tool calls will be handled in the loop)
+				if (accumulatedText) {
+					yield {
+						text: accumulatedText,
+						done: false
+					};
+				}
 
 				for (let turn = 1; turn <= 10; turn++) {
 					Logger.debug('Gemini', `🔄 Turn ${turn}: Tool responses present, making follow-up call...`);
@@ -1981,6 +2139,21 @@ export class GeminiClient {
 
 							Logger.debug('Gemini', 'Tool result:', toolResult.substring(0, 200) + (toolResult.length > 200 ? '...' : ''));
 
+							// Yield tool call as separate chat bubble (action)
+							yield { text: '', done: false, toolCalls: [toolCall] };
+
+							// Optionally render tool result. For verbose tools like search_vault,
+							// we do NOT render the raw result and only send it to the model.
+							// Suppress result rendering for all tools except google_web_search.
+							// The result is still passed to the model via functionResponse; only the model's reply is shown.
+							const suppressResultRender = toolCall.name !== 'google_web_search';
+							if (!suppressResultRender) {
+								// Then yield the tool result as a separate chat message
+								yield { text: toolResult, done: false, isFollowUp: true };
+							} else {
+								Logger.debug('Gemini', '🛑 Suppressing direct render of tool result for:', toolCall.name);
+							}
+
 							toolResponses.push({
 								name: toolCall.name,
 								response: { result: toolResult }
@@ -1989,6 +2162,9 @@ export class GeminiClient {
 							Logger.debug('Gemini', 'Tool rejected by user');
 							toolCall.status = 'rejected';
 							toolCall.error = 'User rejected tool execution';
+
+							// Yield rejected tool call as separate chat bubble (action)
+							yield { text: '', done: false, toolCalls: [toolCall] };
 
 							toolResponses.push({
 								name: toolCall.name,
@@ -2066,6 +2242,9 @@ export class GeminiClient {
 										role: 'model',
 										parts: [{ text: followUpText }]
 									});
+									
+									// Auto-save history after message exchange completes
+									await this.saveCurrentHistory();
 									
 									yield { text: followUpText, done: true };
 								}
@@ -2156,6 +2335,9 @@ export class GeminiClient {
 					currentToolCalls = followUpToolCalls;
 				}
 			}
+
+			// Auto-save history after message exchange completes
+			await this.saveCurrentHistory();
 
 			yield {
 				text: accumulatedText,
@@ -2586,10 +2768,103 @@ The regulatory landscape is also evolving, with the EU AI Act⁴ establishing co
 
 	clearHistory(): void {
 		this.history = [];
+		this.currentHistoryId = null;
 	}
 
 	getHistory(): Content[] {
 		return [...this.history];
+	}
+
+	/**
+	 * Create new history, clear current
+	 */
+	async createNewHistory(name?: string): Promise<void> {
+		// Save current history if it exists
+		if (this.currentHistoryId && this.history.length > 0) {
+			await this.saveCurrentHistory();
+		}
+
+		// Clear current history
+		this.history = [];
+		this.currentHistoryId = null;
+
+		Logger.debug('Gemini', 'Created new chat history');
+	}
+
+	/**
+	 * Load history and set it as current
+	 */
+	async loadHistory(id: string): Promise<boolean> {
+		try {
+			// Save current history if it exists
+			if (this.currentHistoryId && this.history.length > 0) {
+				await this.saveCurrentHistory();
+			}
+
+			const history = await this.chatHistoryManager.getHistory(id);
+			if (!history) {
+				Logger.warn('Gemini', 'History not found: ' + id);
+				return false;
+			}
+
+			this.history = history.contents;
+			this.currentHistoryId = id;
+			Logger.debug('Gemini', 'Loaded history: ' + id + ' (' + history.name + ')');
+			return true;
+		} catch (error: any) {
+			Logger.error('Gemini', 'Error loading history ' + id + ':', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Save current history
+	 */
+	async saveCurrentHistory(): Promise<void> {
+		if (this.history.length === 0) {
+			return; // Nothing to save
+		}
+
+		try {
+			if (this.currentHistoryId) {
+				// Update existing history
+				await this.chatHistoryManager.updateHistory(this.currentHistoryId, this.history);
+				Logger.debug('Gemini', 'Saved current history: ' + this.currentHistoryId);
+			} else {
+				// Create new history
+				const history = await this.chatHistoryManager.createHistory(undefined, this.history);
+				this.currentHistoryId = history.id;
+				Logger.debug('Gemini', 'Created and saved new history: ' + this.currentHistoryId);
+			}
+		} catch (error: any) {
+			Logger.error('Gemini', 'Error saving current history:', error);
+		}
+	}
+
+	/**
+	 * Rename current history
+	 */
+	async renameCurrentHistory(newName: string): Promise<boolean> {
+		if (!this.currentHistoryId) {
+			Logger.warn('Gemini', 'No current history to rename');
+			return false;
+		}
+
+		return await this.chatHistoryManager.renameHistory(this.currentHistoryId, newName);
+	}
+
+	/**
+	 * Get current history ID
+	 */
+	getCurrentHistoryId(): string | null {
+		return this.currentHistoryId;
+	}
+
+	/**
+	 * Get all saved histories
+	 */
+	getAllHistories(): Array<{id: string; name: string; createdAt: number; modifiedAt: number}> {
+		return this.chatHistoryManager.getAllHistories();
 	}
 
 	isReady(): boolean {

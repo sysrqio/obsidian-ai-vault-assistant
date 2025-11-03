@@ -356,26 +356,55 @@ export class DirectGeminiAPIClient {
 		
 		Logger.debug('DirectAPI', `Found ${dataLines.length} SSE data lines`);
 		
-		// Combine all chunks (each chunk has partial text)
+		// Combine all chunks (each chunk has partial text and potentially function calls)
 		let combinedText = '';
 		let finalResponse: any = null;
+		const functionCalls: any[] = [];
 		
 		for (const dataLine of dataLines) {
 			const jsonStr = dataLine.substring(5).trim(); // Remove "data:" prefix
 			const parsed = JSON.parse(jsonStr);
 			const chunk = parsed.response || parsed;
 			
-			// Accumulate text from each chunk
-			const chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || '';
-			combinedText += chunkText;
+			// Process each chunk's parts
+			if (chunk.candidates?.[0]?.content?.parts) {
+				for (const part of chunk.candidates[0].content.parts) {
+					// Accumulate text from each chunk
+					if (part.text) {
+						combinedText += part.text;
+					}
+					// Collect function calls from all chunks
+					if (part.functionCall) {
+						functionCalls.push(part.functionCall);
+					}
+				}
+			}
 			
 			// Keep the last chunk for metadata (usage, finishReason, etc.)
 			finalResponse = chunk;
 		}
 		
-		// Replace the text in the final response with the combined text
-		if (finalResponse && finalResponse.candidates?.[0]?.content?.parts?.[0]) {
-			finalResponse.candidates[0].content.parts[0].text = combinedText;
+		// Replace the parts in the final response with combined text (if any) and function calls
+		if (finalResponse && finalResponse.candidates?.[0]?.content) {
+			if (!finalResponse.candidates[0].content.parts) {
+				finalResponse.candidates[0].content.parts = [];
+			}
+			
+			// Build parts array with combined text (if any) and function calls
+			const combinedParts: any[] = [];
+			if (combinedText) {
+				combinedParts.push({ text: combinedText });
+			}
+			// Add function calls (remove duplicates by name)
+			const seenFunctionNames = new Set<string>();
+			for (const funcCall of functionCalls) {
+				if (!seenFunctionNames.has(funcCall.name)) {
+					combinedParts.push({ functionCall: funcCall });
+					seenFunctionNames.add(funcCall.name);
+				}
+			}
+			
+			finalResponse.candidates[0].content.parts = combinedParts;
 		}
 		
 		const response = finalResponse;
@@ -555,10 +584,15 @@ export class DirectGeminiAPIClient {
 		model: string,
 		contents: Content[],
 		query: string,
-		functionDeclarations: any[] = []
+		functionDeclarations: any[] = [],
+		systemInstruction?: string
 	): Promise<any> {
 		Logger.debug('DirectAPI', 'Making grounded search request');
 		Logger.debug('DirectAPI', 'Query:', query);
+		Logger.debug('DirectAPI', 'System instruction provided:', !!systemInstruction);
+		if (systemInstruction) {
+			Logger.debug('DirectAPI', 'System instruction length:', systemInstruction.length, 'chars');
+		}
 
 		// Fetch user info and Code Assist config
 		await this.fetchUserInfo();
@@ -577,27 +611,41 @@ export class DirectGeminiAPIClient {
 
 		// No quota header needed for Code Assist API
 
+		const requestBody: any = {
+			contents: contents.map(c => ({
+				role: c.role,
+				parts: c.parts?.map(p => ({ text: p.text })) || []
+			})),
+			generationConfig: {
+				temperature: 0.7,
+				maxOutputTokens: 8192,
+			},
+			tools: [{ functionDeclarations: functionDeclarations }]
+		};
+
+		// Add system instruction if provided
+		if (systemInstruction) {
+			requestBody.systemInstruction = {
+				role: 'user',
+				parts: [{ text: systemInstruction }]
+			};
+			Logger.debug('DirectAPI', '✅ System instruction added to request (length:', systemInstruction.length, 'chars)');
+		} else {
+			Logger.debug('DirectAPI', '⚠️  No system instruction provided');
+		}
+
 		const body = {
 			model: model,
 			project: this.projectId,
 			user_prompt_id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}########0`,
-			request: {
-				contents: contents.map(c => ({
-					role: c.role,
-					parts: c.parts?.map(p => ({ text: p.text })) || []
-				})),
-				generationConfig: {
-					temperature: 0.7,
-					maxOutputTokens: 8192,
-				},
-				tools: [{ functionDeclarations: functionDeclarations }]
-			}
+			request: requestBody
 		};
 
 		Logger.debug('DirectAPI', 'Request body:', JSON.stringify(body, null, 2));
+		Logger.debug('DirectAPI', 'System instruction in request:', !!body.request.systemInstruction);
 
 		const urlObj = new URL(url);
-		const requestBody = JSON.stringify(body);
+		const requestBodyString = JSON.stringify(body);
 
 		const options: https.RequestOptions = {
 			hostname: urlObj.hostname,
@@ -606,7 +654,7 @@ export class DirectGeminiAPIClient {
 			method: 'POST',
 			headers: {
 				...headers,
-				'Content-Length': Buffer.byteLength(requestBody),
+				'Content-Length': Buffer.byteLength(requestBodyString),
 			}
 		};
 
@@ -635,7 +683,7 @@ export class DirectGeminiAPIClient {
 					reject(error);
 				});
 
-				req.write(requestBody);
+				req.write(requestBodyString);
 				req.end();
 			});
 
@@ -657,10 +705,58 @@ export class DirectGeminiAPIClient {
 			try {
 				const jsonResponse = JSON.parse(responseData);
 				
-				// Handle array response format
+				// Handle array response format (SSE streaming - multiple responses)
 				if (Array.isArray(jsonResponse) && jsonResponse.length > 0 && jsonResponse[0].response) {
-					parsedResponse = jsonResponse[0].response;
-					Logger.debug('DirectAPI', '✅ Parsed as array JSON response');
+					// Accumulate text from all responses in the array (SSE format)
+					let combinedText = '';
+					let finalResponse: any = null;
+					const functionCalls: any[] = [];
+					
+					for (const item of jsonResponse) {
+						if (item.response && item.response.candidates && item.response.candidates.length > 0) {
+							const candidate = item.response.candidates[0];
+							if (candidate.content && candidate.content.parts) {
+								for (const part of candidate.content.parts) {
+									if (part.text) {
+										combinedText += part.text;
+									}
+									if (part.functionCall) {
+										// Collect function calls from all chunks (typically only in final response)
+										functionCalls.push(part.functionCall);
+									}
+								}
+							}
+							// Keep the last response for metadata (usage, finishReason, etc.)
+							finalResponse = item.response;
+						}
+					}
+					
+					// Replace the text in the final response with the combined text, preserving function calls
+					if (finalResponse && finalResponse.candidates && finalResponse.candidates.length > 0) {
+						if (!finalResponse.candidates[0].content) {
+							finalResponse.candidates[0].content = { role: 'model', parts: [] };
+						}
+						if (!finalResponse.candidates[0].content.parts) {
+							finalResponse.candidates[0].content.parts = [];
+						}
+						// Build parts array with combined text (if any) and function calls
+						const combinedParts: any[] = [];
+						if (combinedText) {
+							combinedParts.push({ text: combinedText });
+						}
+						// Add function calls (remove duplicates by name)
+						const seenFunctionNames = new Set<string>();
+						for (const funcCall of functionCalls) {
+							if (!seenFunctionNames.has(funcCall.name)) {
+								combinedParts.push({ functionCall: funcCall });
+								seenFunctionNames.add(funcCall.name);
+							}
+						}
+						finalResponse.candidates[0].content.parts = combinedParts;
+					}
+					
+					parsedResponse = finalResponse;
+					Logger.debug('DirectAPI', `✅ Parsed as array JSON response (${jsonResponse.length} chunks, ${combinedText.length} chars, ${functionCalls.length} function calls)`);
 				}
 				// Handle direct response format
 				else if (jsonResponse.response) {

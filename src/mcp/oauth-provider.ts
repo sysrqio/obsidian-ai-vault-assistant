@@ -45,7 +45,7 @@ export class MCPOAuthProvider {
     }
 
     const registrationRequest = {
-      client_name: 'Obsidian Gemini Assistant',
+      client_name: 'Obsidian AI Vault Assistant',
       redirect_uris: [this.config.redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

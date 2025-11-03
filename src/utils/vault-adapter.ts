@@ -34,9 +34,12 @@ export class VaultAdapter {
 			return allFiles.map(file => file.path);
 		}
 		
-		// Filter files in specific directory
+		// Normalize directory path (remove trailing slash if present)
+		const normalizedDir = directory.endsWith('/') ? directory.slice(0, -1) : directory;
+		
+		// Filter files in specific directory (recursively - includes all subdirectories)
 		const filtered = allFiles.filter(file => 
-			file.path.startsWith(directory + '/') || file.path === directory
+			file.path.startsWith(normalizedDir + '/') || file.path === normalizedDir
 		);
 		
 		return filtered.map(file => file.path);

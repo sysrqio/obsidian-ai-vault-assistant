@@ -18,12 +18,15 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 	const isUser = message.role === 'user';
 	const isSystem = message.role === 'system';
 	const isError = message.content.includes('Error:') || message.content.includes('Failed:');
+	const isToolCallOnly = !message.content && message.toolCalls && message.toolCalls.length > 0;
 	
 	const className = isUser 
 		? 'gemini-message user' 
 		: isSystem 
 			? isError ? 'gemini-message system error' : 'gemini-message system'
-			: 'gemini-message assistant';
+			: isToolCallOnly 
+				? 'gemini-message assistant tool-calls'
+				: 'gemini-message assistant';
 
 	// Render markdown using Obsidian's renderer
 	React.useEffect(() => {
@@ -142,23 +145,111 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 
 	return (
 		<div className={className}>
-			<div className="gemini-message-header">
-				<div className="gemini-message-content">
-					{renderMarkdown && !isUser ? (
-						<div ref={contentRef} className="markdown-rendered" />
-					) : (
-						renderContent(message.content)
-					)}
+			{isToolCallOnly ? (
+				// Tool calls only - display in separate bubble
+				<div className="gemini-message-header">
+					<div className="gemini-message-content">
+						<div className="gemini-tool-calls-header">
+							<span style={{ fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>
+								🤔 Thinking...
+							</span>
+						</div>
+						<div className="gemini-tool-calls">
+							{message.toolCalls && message.toolCalls.map((tool, idx) => (
+								<div key={idx} className="gemini-tool-call">
+									<div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+										<span className="gemini-tool-name" style={{ fontWeight: 'bold' }}>
+											🔧 {tool.name}
+										</span>
+										<span className="gemini-tool-status" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>
+											({tool.status})
+										</span>
+									</div>
+									{tool.args && Object.keys(tool.args).length > 0 && (
+										<div className="gemini-tool-args" style={{ 
+											marginLeft: '24px', 
+											marginTop: '4px', 
+											fontSize: '0.9em',
+											color: 'var(--text-muted)',
+											fontFamily: 'monospace'
+										}}>
+											{JSON.stringify(tool.args, null, 2)}
+										</div>
+									)}
+									{tool.result && (
+										<div className="gemini-tool-result" style={{ 
+											marginLeft: '24px', 
+											marginTop: '4px',
+											padding: '4px 8px',
+											background: 'var(--background-modifier-hover)',
+											borderRadius: '4px',
+											fontSize: '0.9em'
+										}}>
+											✓ Result: {tool.result.length > 200 ? tool.result.substring(0, 200) + '...' : tool.result}
+										</div>
+									)}
+									{tool.error && (
+										<div className="gemini-tool-error" style={{ 
+											marginLeft: '24px', 
+											marginTop: '4px',
+											padding: '4px 8px',
+											background: 'var(--background-modifier-error)',
+											borderRadius: '4px',
+											fontSize: '0.9em',
+											color: 'var(--text-error)'
+										}}>
+											✗ Error: {tool.error}
+										</div>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+					<button
+						ref={buttonRef}
+						className="gemini-message-menu-button"
+						onClick={handleMenuToggle}
+						title="Message options"
+					>
+						⋯
+					</button>
 				</div>
-				<button
-					ref={buttonRef}
-					className="gemini-message-menu-button"
-					onClick={handleMenuToggle}
-					title="Message options"
-				>
-					⋯
-				</button>
-			</div>
+			) : (
+				// Regular message with optional tool calls
+				<>
+					<div className="gemini-message-header">
+						<div className="gemini-message-content">
+							{renderMarkdown && !isUser ? (
+								<div ref={contentRef} className="markdown-rendered" />
+							) : (
+								renderContent(message.content)
+							)}
+						</div>
+						<button
+							ref={buttonRef}
+							className="gemini-message-menu-button"
+							onClick={handleMenuToggle}
+							title="Message options"
+						>
+							⋯
+						</button>
+					</div>
+					
+					{message.toolCalls && message.toolCalls.length > 0 && (
+						<div className="gemini-tool-calls" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--background-modifier-border)' }}>
+							<div style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginBottom: '4px' }}>
+								🔧 Tools used:
+							</div>
+							{message.toolCalls.map((tool, idx) => (
+								<div key={idx} className="gemini-tool-call" style={{ fontSize: '0.9em', marginLeft: '16px' }}>
+									<span className="gemini-tool-name">{tool.name}</span>
+									<span className="gemini-tool-status"> ({tool.status})</span>
+								</div>
+							))}
+						</div>
+					)}
+				</>
+			)}
 			
 			{showMenu && (
 			<div
@@ -177,26 +268,6 @@ export const MessageComponent: React.FC<MessageProps> = ({ message, renderMarkdo
 							📝 Copy as markdown
 						</div>
 					)}
-				</div>
-			)}
-
-			{message.toolCalls && message.toolCalls.length > 0 && (
-				<div className="gemini-tool-calls">
-					{message.toolCalls.map((tool, idx) => (
-						<div key={idx} className="gemini-tool-call">
-							<span className="gemini-tool-name">🔧 {tool.name}</span>
-							<span className="gemini-tool-status"> - {tool.status}</span>
-							{tool.result && (
-								<div className="gemini-tool-result">
-									✓ {tool.result.substring(0, 100)}
-									{tool.result.length > 100 && '...'}
-								</div>
-							)}
-							{tool.error && (
-								<div className="gemini-tool-error">✗ {tool.error}</div>
-							)}
-						</div>
-					))}
 				</div>
 			)}
 		</div>

@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { ChatInterface } from './ui/chat-interface';
-import type { GeminiClient, Message } from './gemini-client';
+import type { GeminiClient, Message, ToolCall } from './gemini-client';
 import { Logger } from './utils/logger';
 import type GeminiPlugin from './main';
 import { ToolConfirmationModal, ToolConfirmationData } from './tool-confirmation-modal';
@@ -46,6 +46,15 @@ export class GeminiView extends ItemView {
 			Logger.error('Error', 'Failed to initialize Gemini client:', error);
 		}
 
+		// Auto-create new history when view opens (if setting enabled and no current history)
+		if (this.plugin.settings.autoCreateHistoryOnOpen !== false) {
+			const currentHistoryId = this.geminiClient.getCurrentHistoryId();
+			if (!currentHistoryId) {
+				await this.geminiClient.createNewHistory();
+				Logger.debug('View', 'Auto-created new history on view open');
+			}
+		}
+
 		this.root = ReactDOM.createRoot(container);
 		this.render();
 
@@ -61,6 +70,13 @@ export class GeminiView extends ItemView {
 	}
 
 	async onClose() {
+		// Auto-save current history when closing view
+		try {
+			await this.geminiClient.saveCurrentHistory();
+		} catch (error) {
+			Logger.error('View', 'Error saving history on close:', error);
+		}
+
 		if (this.root) {
 			this.root.unmount();
 		}
@@ -75,16 +91,27 @@ export class GeminiView extends ItemView {
 	private render(): void {
 		if (!this.root) return;
 
+		const currentHistoryId = this.geminiClient.getCurrentHistoryId();
+		const allHistories = this.geminiClient.getAllHistories();
+		const currentHistory = allHistories.find(h => h.id === currentHistoryId);
+		const currentHistoryName = currentHistory?.name || null;
+
 		this.root.render(
 			React.createElement(ChatInterface, {
 				messages: this.messages,
 				isLoading: this.isLoading,
 				onSendMessage: this.handleSendMessage.bind(this),
-				onClearChat: this.handleClearChat.bind(this),
 				isReady: this.geminiClient?.isReady() || false,
 				onShowTools: this.handleShowTools.bind(this),
 				renderMarkdown: this.plugin.settings.renderMarkdown,
-				component: this
+				component: this,
+				currentHistoryId: currentHistoryId,
+				currentHistoryName: currentHistoryName,
+				histories: allHistories,
+				onCreateNewChat: this.handleCreateNewChat.bind(this),
+				onLoadHistory: this.handleLoadHistory.bind(this),
+				onRenameHistory: this.handleRenameHistory.bind(this),
+				onDeleteHistory: this.handleDeleteHistory.bind(this)
 			})
 		);
 	}
@@ -114,7 +141,8 @@ export class GeminiView extends ItemView {
 		try {
 			for await (const chunk of this.geminiClient.sendMessage(message)) {
 				if (chunk.text) {
-					// If we have text and no current message, or if current message already has tool calls, or if this is a follow-up response, create new message
+					// Always create a new message for text responses (separate from tool calls)
+					// If current message exists and has tool calls, create new message for text
 					if (!currentMessage || currentMessage.toolCalls || (chunk as any).isFollowUp) {
 						currentMessage = {
 							id: 'assistant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
@@ -129,18 +157,18 @@ export class GeminiView extends ItemView {
 				}
 
 				if (chunk.toolCalls && chunk.toolCalls.length > 0) {
-					// If we have tool calls and no current message, or if current message already has text, create new message
-					if (!currentMessage || currentMessage.content) {
-						currentMessage = {
-							id: 'assistant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-							role: 'assistant',
-							content: '',
-							timestamp: Date.now()
-						};
-						this.messages.push(currentMessage);
-					}
-					currentMessage.toolCalls = chunk.toolCalls;
+					// Always create a separate message for tool calls (thought process)
+					// Never merge tool calls with text content in the same message
+					const toolCallMessage: Message = {
+						id: 'tool-calls-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+						role: 'assistant',
+						content: '', // Empty content - tool calls are displayed separately
+						toolCalls: chunk.toolCalls,
+						timestamp: Date.now()
+					};
+					this.messages.push(toolCallMessage);
 					this.render();
+					// Don't update currentMessage - tool calls are in their own bubble
 				}
 			}
 
@@ -387,10 +415,179 @@ export class GeminiView extends ItemView {
 		}, 100);
 	}
 
-	private handleClearChat(): void {
+	private async handleClearChat(): Promise<void> {
 		Logger.debug('View', 'Clearing chat');
+		
+		// Save current history before clearing
+		await this.geminiClient.saveCurrentHistory();
+		
 		this.messages = [];
 		this.geminiClient.clearHistory();
+		
+		// Create new history after clearing
+		await this.geminiClient.createNewHistory();
+		
+		this.render();
+	}
+
+	/**
+	 * Create new chat history
+	 */
+	private async handleCreateNewChat(): Promise<void> {
+		Logger.debug('View', 'Creating new chat');
+		
+		// Save current history before creating new one
+		await this.geminiClient.saveCurrentHistory();
+		
+		this.messages = [];
+		await this.geminiClient.createNewHistory();
+		
+		this.render();
+	}
+
+	/**
+	 * Load existing history
+	 */
+	private async handleLoadHistory(id: string): Promise<void> {
+		Logger.debug('View', 'Loading history:', id);
+		
+		// Save current history before loading new one
+		await this.geminiClient.saveCurrentHistory();
+		
+		const success = await this.geminiClient.loadHistory(id);
+		if (success) {
+			// Clear messages and reload from history
+			this.messages = [];
+			
+			// Convert history contents to messages for display
+			const history = this.geminiClient.getHistory();
+			if (history && history.length > 0) {
+				let messageIdCounter = 0;
+				
+				for (const content of history) {
+					if (content.role === 'user') {
+						// User message - extract text and functionResponse parts
+						const textParts: string[] = [];
+						const functionResponseParts: any[] = [];
+						
+						for (const part of content.parts || []) {
+							if (part.text) {
+								textParts.push(part.text);
+							} else if ((part as any).functionResponse) {
+								functionResponseParts.push((part as any).functionResponse);
+							}
+						}
+						
+						// If there's text content, create a user message
+						if (textParts.length > 0) {
+							const userMessage: Message = {
+								id: 'user-' + Date.now() + '-' + (messageIdCounter++),
+								role: 'user',
+								content: textParts.join('\n'),
+								timestamp: Date.now()
+							};
+							this.messages.push(userMessage);
+						}
+						
+						// Function responses are typically shown as part of the model's response
+						// or as a separate system message, but for now we'll skip them in display
+						// as they're internal to the conversation flow
+					} else if (content.role === 'model') {
+						// Model message - extract text and functionCall parts
+						const textParts: string[] = [];
+						const toolCalls: ToolCall[] = [];
+						
+						for (const part of content.parts || []) {
+							if (part.text) {
+								textParts.push(part.text);
+							} else if ((part as any).functionCall) {
+								const funcCall = (part as any).functionCall;
+								toolCalls.push({
+									name: funcCall.name,
+									args: funcCall.args || {},
+									status: 'executed', // Historical tool calls are already executed
+									result: undefined,
+									error: undefined
+								});
+							}
+						}
+						
+						// Create separate message for tool calls if present
+						if (toolCalls.length > 0) {
+							const toolCallMessage: Message = {
+								id: 'assistant-tools-' + Date.now() + '-' + (messageIdCounter++),
+								role: 'assistant',
+								content: '', // Empty content - tool calls are displayed separately
+								toolCalls: toolCalls,
+								timestamp: Date.now()
+							};
+							this.messages.push(toolCallMessage);
+						}
+						
+						// Create message for text content if present
+						if (textParts.length > 0) {
+							const assistantMessage: Message = {
+								id: 'assistant-' + Date.now() + '-' + (messageIdCounter++),
+								role: 'assistant',
+								content: textParts.join('\n'),
+								timestamp: Date.now()
+							};
+							this.messages.push(assistantMessage);
+						}
+					}
+				}
+			}
+			
+			this.render();
+		} else {
+			Logger.error('View', 'Failed to load history:', id);
+		}
+	}
+
+	/**
+	 * Rename history
+	 */
+	private async handleRenameHistory(id: string, newName: string): Promise<void> {
+		Logger.debug('View', 'Renaming history:', id, 'to:', newName);
+		
+		// If renaming current history, use renameCurrentHistory
+		const currentHistoryId = this.geminiClient.getCurrentHistoryId();
+		if (currentHistoryId === id) {
+			const success = await this.geminiClient.renameCurrentHistory(newName);
+			if (success) {
+				this.render(); // Re-render to update UI
+			} else {
+				Logger.error('View', 'Failed to rename history:', id);
+			}
+		} else {
+			// Rename other history via manager
+			const chatHistoryManager = (this.geminiClient as any).chatHistoryManager;
+			if (chatHistoryManager) {
+				await chatHistoryManager.renameHistory(id, newName);
+				this.render(); // Re-render to update UI
+			}
+		}
+	}
+
+	/**
+	 * Delete history
+	 */
+	private async handleDeleteHistory(id: string): Promise<void> {
+		Logger.debug('View', 'Deleting history:', id);
+		
+		// If deleting current history, clear chat
+		const currentHistoryId = this.geminiClient.getCurrentHistoryId();
+		if (currentHistoryId === id) {
+			this.messages = [];
+			this.geminiClient.clearHistory();
+		}
+		
+		// Delete from manager
+		const chatHistoryManager = (this.geminiClient as any).chatHistoryManager;
+		if (chatHistoryManager) {
+			await chatHistoryManager.deleteHistory(id);
+		}
+		
 		this.render();
 	}
 

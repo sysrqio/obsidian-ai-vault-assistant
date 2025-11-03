@@ -8,28 +8,46 @@ interface ChatInterfaceProps {
 	messages: Message[];
 	isLoading: boolean;
 	onSendMessage: (message: string) => void;
-	onClearChat: () => void;
 	isReady: boolean;
 	onShowTools: () => void;
 	renderMarkdown?: boolean;
 	component?: Component;
+	currentHistoryId?: string | null;
+	currentHistoryName?: string | null;
+	histories?: Array<{id: string; name: string; modifiedAt: number}>;
+	onCreateNewChat?: () => void;
+	onLoadHistory?: (id: string) => void;
+	onRenameHistory?: (id: string, newName: string) => void;
+	onDeleteHistory?: (id: string) => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 	messages,
 	isLoading,
 	onSendMessage,
-	onClearChat,
 	isReady,
 	onShowTools,
 	renderMarkdown = true,
-	component
+	component,
+	currentHistoryId = null,
+	currentHistoryName = null,
+	histories = [],
+	onCreateNewChat,
+	onLoadHistory,
+	onRenameHistory,
+	onDeleteHistory
 }) => {
 	const [input, setInput] = useState('');
 	const [isSending, setIsSending] = useState(false);
+	const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
+	const [showRenameModal, setShowRenameModal] = useState(false);
+	const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+	const [renameValue, setRenameValue] = useState('');
+	const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const dropdownRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		requestAnimationFrame(() => {
@@ -87,23 +105,204 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 		}
 	};
 
+	// Close dropdown when clicking outside
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+				setShowHistoryDropdown(false);
+			}
+		};
+
+		if (showHistoryDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+		}
+
+		return () => {
+			document.removeEventListener('mousedown', handleClickOutside);
+		};
+	}, [showHistoryDropdown]);
+
+	const handleCreateNewChat = () => {
+		if (onCreateNewChat) {
+			onCreateNewChat();
+		}
+		setShowHistoryDropdown(false);
+	};
+
+	const handleLoadHistory = (id: string) => {
+		if (onLoadHistory) {
+			onLoadHistory(id);
+		}
+		setShowHistoryDropdown(false);
+	};
+
+	const handleRenameClick = (id: string, currentName: string) => {
+		setRenameTargetId(id);
+		setRenameValue(currentName);
+		setShowRenameModal(true);
+		setShowHistoryDropdown(false);
+	};
+
+	const handleRenameSubmit = () => {
+		if (renameTargetId && renameValue.trim() && onRenameHistory) {
+			onRenameHistory(renameTargetId, renameValue.trim());
+		}
+		setShowRenameModal(false);
+		setRenameTargetId(null);
+		setRenameValue('');
+	};
+
+	const handleDeleteClick = (id: string) => {
+		setDeleteTargetId(id);
+		setShowHistoryDropdown(false);
+	};
+
+	const handleDeleteConfirm = () => {
+		if (deleteTargetId && onDeleteHistory) {
+			onDeleteHistory(deleteTargetId);
+		}
+		setDeleteTargetId(null);
+	};
+
+	const formatDate = (timestamp: number) => {
+		const date = new Date(timestamp);
+		return date.toLocaleString();
+	};
+
 	return (
 		<div className="gemini-chat-container">
 			<div className="gemini-header">
-				<h3>Gemini Assistant</h3>
-				<button 
-					className="gemini-clear-button"
-					onClick={onClearChat}
-					disabled={messages.length === 0}
-				>
-					Clear Chat
-				</button>
+				<h3>AI vault assistant</h3>
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+					<div style={{ position: 'relative' }} ref={dropdownRef}>
+						<button
+							className="gemini-history-button"
+							onClick={() => setShowHistoryDropdown(!showHistoryDropdown)}
+							style={{
+								padding: '6px 12px',
+								background: 'var(--interactive-normal)',
+								border: '1px solid var(--background-modifier-border)',
+								borderRadius: '4px',
+								cursor: 'pointer',
+								fontSize: '14px',
+								color: 'var(--text-normal)'
+							}}
+						>
+							{currentHistoryName || 'New Chat'} ▼
+						</button>
+						{showHistoryDropdown && (
+							<div
+								style={{
+									position: 'absolute',
+									top: '100%',
+									right: 0,
+									marginTop: '4px',
+									background: 'var(--background-primary)',
+									border: '1px solid var(--background-modifier-border)',
+									borderRadius: '4px',
+									boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+									minWidth: '250px',
+									maxHeight: '400px',
+									overflowY: 'auto',
+									zIndex: 1000
+								}}
+							>
+								<div
+									onClick={handleCreateNewChat}
+									style={{
+										padding: '8px 12px',
+										cursor: 'pointer',
+										borderBottom: '1px solid var(--background-modifier-border)',
+										background: 'var(--interactive-hover)',
+										fontWeight: 'bold'
+									}}
+									onMouseEnter={(e) => e.currentTarget.style.background = 'var(--interactive-hover)'}
+									onMouseLeave={(e) => e.currentTarget.style.background = 'var(--interactive-hover)'}
+								>
+									➕ New Chat
+								</div>
+								<div style={{ padding: '4px', borderBottom: '1px solid var(--background-modifier-border)' }} />
+								{histories.length === 0 ? (
+									<div style={{ padding: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+										No saved histories
+									</div>
+								) : (
+									histories.map((history) => (
+										<div
+											key={history.id}
+											style={{
+												padding: '8px 12px',
+												borderBottom: '1px solid var(--background-modifier-border)',
+												cursor: history.id === currentHistoryId ? 'default' : 'pointer',
+												background: history.id === currentHistoryId ? 'var(--background-modifier-hover)' : 'transparent'
+											}}
+											onMouseEnter={(e) => {
+												if (history.id !== currentHistoryId) {
+													e.currentTarget.style.background = 'var(--background-modifier-hover)';
+												}
+											}}
+											onMouseLeave={(e) => {
+												if (history.id !== currentHistoryId) {
+													e.currentTarget.style.background = 'transparent';
+												}
+											}}
+										>
+											<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+												<div
+													onClick={() => history.id !== currentHistoryId && handleLoadHistory(history.id)}
+													style={{ flex: 1 }}
+												>
+													<div style={{ fontWeight: history.id === currentHistoryId ? 'bold' : 'normal' }}>
+														{history.name}
+													</div>
+													<div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+														{formatDate(history.modifiedAt)}
+													</div>
+												</div>
+												<div style={{ display: 'flex', gap: '4px' }}>
+													<button
+														onClick={() => handleRenameClick(history.id, history.name)}
+														style={{
+															padding: '4px 8px',
+															background: 'transparent',
+															border: 'none',
+															cursor: 'pointer',
+															fontSize: '12px',
+															color: 'var(--text-muted)'
+														}}
+														title="Rename"
+													>
+														✏️
+													</button>
+													<button
+														onClick={() => handleDeleteClick(history.id)}
+														style={{
+															padding: '4px 8px',
+															background: 'transparent',
+															border: 'none',
+															cursor: 'pointer',
+															fontSize: '12px',
+															color: 'var(--text-error)'
+														}}
+														title="Delete"
+													>
+														🗑️
+													</button>
+												</div>
+											</div>
+										</div>
+									))
+								)}
+							</div>
+						)}
+					</div>
+				</div>
 			</div>
 
 			<div className="gemini-messages" ref={messagesContainerRef}>
 				{messages.length === 0 ? (
 					<div className="gemini-empty-state">
-						<h4>👋 Welcome to Gemini Assistant!</h4>
+						<h4>👋 Welcome to AI vault assistant!</h4>
 						<p>Ask me anything about your notes, or try:</p>
 						<ul>
 							<li>"List all markdown files"</li>
@@ -151,6 +350,158 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 					Send
 				</button>
 			</form>
+
+			{/* Rename Modal */}
+			{showRenameModal && (
+				<div
+					style={{
+						position: 'fixed',
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						background: 'rgba(0, 0, 0, 0.5)',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						zIndex: 10000
+					}}
+					onClick={() => setShowRenameModal(false)}
+				>
+					<div
+						style={{
+							background: 'var(--background-primary)',
+							border: '1px solid var(--background-modifier-border)',
+							borderRadius: '8px',
+							padding: '20px',
+							minWidth: '300px',
+							maxWidth: '500px'
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3 style={{ marginTop: 0 }}>Rename Chat History</h3>
+						<input
+							type="text"
+							value={renameValue}
+							onChange={(e) => setRenameValue(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter') {
+									handleRenameSubmit();
+								} else if (e.key === 'Escape') {
+									setShowRenameModal(false);
+									setRenameTargetId(null);
+									setRenameValue('');
+								}
+							}}
+							autoFocus
+							style={{
+								width: '100%',
+								padding: '8px',
+								marginBottom: '12px',
+								border: '1px solid var(--background-modifier-border)',
+								borderRadius: '4px',
+								background: 'var(--background-primary-alt)',
+								color: 'var(--text-normal)'
+							}}
+						/>
+						<div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+							<button
+								onClick={() => {
+									setShowRenameModal(false);
+									setRenameTargetId(null);
+									setRenameValue('');
+								}}
+								style={{
+									padding: '6px 12px',
+									background: 'var(--background-secondary)',
+									border: '1px solid var(--background-modifier-border)',
+									borderRadius: '4px',
+									cursor: 'pointer'
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleRenameSubmit}
+								disabled={!renameValue.trim()}
+								style={{
+									padding: '6px 12px',
+									background: 'var(--interactive-accent)',
+									border: 'none',
+									borderRadius: '4px',
+									cursor: renameValue.trim() ? 'pointer' : 'not-allowed',
+									color: 'white'
+								}}
+							>
+								Save
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Delete Confirmation Modal */}
+			{deleteTargetId && (
+				<div
+					style={{
+						position: 'fixed',
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						background: 'rgba(0, 0, 0, 0.5)',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						zIndex: 10000
+					}}
+					onClick={() => setDeleteTargetId(null)}
+				>
+					<div
+						style={{
+							background: 'var(--background-primary)',
+							border: '1px solid var(--background-modifier-border)',
+							borderRadius: '8px',
+							padding: '20px',
+							minWidth: '300px',
+							maxWidth: '500px'
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3 style={{ marginTop: 0 }}>Delete Chat History?</h3>
+						<p style={{ color: 'var(--text-normal)' }}>
+							Are you sure you want to delete this chat history? This action cannot be undone.
+						</p>
+						<div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+							<button
+								onClick={() => setDeleteTargetId(null)}
+								style={{
+									padding: '6px 12px',
+									background: 'var(--background-secondary)',
+									border: '1px solid var(--background-modifier-border)',
+									borderRadius: '4px',
+									cursor: 'pointer'
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleDeleteConfirm}
+								style={{
+									padding: '6px 12px',
+									background: 'var(--text-error)',
+									border: 'none',
+									borderRadius: '4px',
+									cursor: 'pointer',
+									color: 'white'
+								}}
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

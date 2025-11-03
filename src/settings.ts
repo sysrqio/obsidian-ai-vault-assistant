@@ -82,6 +82,9 @@ export interface GeminiSettings {
 	enableMCP?: boolean;
 	// View Configuration
 	viewPosition?: 'left' | 'right' | 'tab';
+	// Chat History Configuration
+	autoCreateHistoryOnOpen?: boolean;
+	maxChatHistories?: number;
 }
 
 export const DEFAULT_SETTINGS: GeminiSettings = {
@@ -109,6 +112,9 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 	enableMCP: true,
 	// View Configuration
 	viewPosition: 'right',
+	// Chat History Configuration
+	autoCreateHistoryOnOpen: true,
+	maxChatHistories: 50,
 	toolPermissions: {
 		// Core file tools
 		web_fetch: 'ask',
@@ -387,6 +393,36 @@ export class GeminiSettingTab extends PluginSettingTab {
 					const num = parseInt(value);
 					if (!isNaN(num) && num > 0) {
 						this.plugin.settings.contextSettings.recentFilesHours = num;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		// Chat History Settings
+		containerEl.createEl('h3', { text: 'Chat History Configuration' });
+		containerEl.createEl('p', { 
+			text: 'Configure how chat histories are managed and persisted.' 
+		});
+
+		new Setting(containerEl)
+			.setName('Auto-create History on View Open')
+			.setDesc('Automatically create a new chat history when the view opens (if no current history exists)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.autoCreateHistoryOnOpen !== false)
+				.onChange(async (value) => {
+					this.plugin.settings.autoCreateHistoryOnOpen = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Max Chat Histories')
+			.setDesc('Maximum number of chat histories to keep. Oldest histories will be automatically deleted when this limit is exceeded.')
+			.addText(text => text
+				.setPlaceholder('50')
+				.setValue(String(this.plugin.settings.maxChatHistories || 50))
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						this.plugin.settings.maxChatHistories = num;
 						await this.plugin.saveSettings();
 					}
 				}));

@@ -395,12 +395,16 @@ export class DirectGeminiAPIClient {
 			if (combinedText) {
 				combinedParts.push({ text: combinedText });
 			}
-			// Add function calls (remove duplicates by name)
-			const seenFunctionNames = new Set<string>();
+			// Add function calls (remove duplicates by name AND arguments)
+			// Use a unique key based on both function name and arguments to prevent
+			// discarding legitimate calls with same name but different arguments
+			const seenFunctionCalls = new Set<string>();
 			for (const funcCall of functionCalls) {
-				if (!seenFunctionNames.has(funcCall.name)) {
+				// Create unique key from function name and stringified arguments
+				const callKey = `${funcCall.name}:${JSON.stringify(funcCall.args || {})}`;
+				if (!seenFunctionCalls.has(callKey)) {
 					combinedParts.push({ functionCall: funcCall });
-					seenFunctionNames.add(funcCall.name);
+					seenFunctionCalls.add(callKey);
 				}
 			}
 			
@@ -744,12 +748,16 @@ export class DirectGeminiAPIClient {
 						if (combinedText) {
 							combinedParts.push({ text: combinedText });
 						}
-						// Add function calls (remove duplicates by name)
-						const seenFunctionNames = new Set<string>();
+						// Add function calls (remove duplicates by name AND arguments)
+						// Use a unique key based on both function name and arguments to prevent
+						// discarding legitimate calls with same name but different arguments
+						const seenFunctionCalls = new Set<string>();
 						for (const funcCall of functionCalls) {
-							if (!seenFunctionNames.has(funcCall.name)) {
+							// Create unique key from function name and stringified arguments
+							const callKey = `${funcCall.name}:${JSON.stringify(funcCall.args || {})}`;
+							if (!seenFunctionCalls.has(callKey)) {
 								combinedParts.push({ functionCall: funcCall });
-								seenFunctionNames.add(funcCall.name);
+								seenFunctionCalls.add(callKey);
 							}
 						}
 						finalResponse.candidates[0].content.parts = combinedParts;

@@ -123,7 +123,7 @@ export class OAuthHandler {
 			return false;
 		}
 	}
-
+	
 	/**
 	 * Start local HTTP server to handle OAuth callback
 	 * Desktop only - mobile requires manual code entry
@@ -231,9 +231,9 @@ export class OAuthHandler {
 		
 		// Try Electron's shell first (desktop)
 		try {
-			if (typeof window !== 'undefined' && (window as any).require) {
-				const { shell } = (window as any).require('electron');
-				shell.openExternal(authUrl);
+		if (typeof window !== 'undefined' && (window as any).require) {
+			const { shell } = (window as any).require('electron');
+			shell.openExternal(authUrl);
 				return;
 			}
 		} catch (error) {

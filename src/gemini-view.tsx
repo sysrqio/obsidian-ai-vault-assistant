@@ -253,9 +253,9 @@ export class GeminiView extends ItemView {
 			'read_file': 'Read the contents of a file from your vault',
 			'list_files': 'List files in your vault or a specific directory',
 			'read_many_files': 'Read content from multiple files using glob patterns',
-		'write_file': 'Create or overwrite a file in your vault',
+			'write_file': 'Create or overwrite a file in your vault',
 		'edit_file': 'Make semantic, context-aware edits to files (add items to lists, insert at sections, replace patterns). Use for targeted edits like "Add Project XYZ to my weekly key projects"',
-		'search_files': 'Search for files matching a pattern',
+			'search_files': 'Search for files matching a pattern',
 			'web_fetch': 'Fetch content from URLs on the internet',
 			'google_web_search': 'Search the web using Google Search with grounded citations',
 			'save_memory': 'Save important information to long-term memory for future sessions'

@@ -28,3 +28,4 @@ coverage/
 # Temporary files
 *.tmp
 client_secret.json*
+chat-*.json

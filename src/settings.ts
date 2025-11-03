@@ -38,6 +38,7 @@ export interface ToolPermissions {
 	create_folder: ToolPermission;
 	move_file: ToolPermission;
 	delete_file: ToolPermission;
+	edit_file: ToolPermission;
 	
 	// Metadata & organization
 	get_file_metadata: ToolPermission;
@@ -112,6 +113,7 @@ export const DEFAULT_SETTINGS: GeminiSettings = {
 		// Core file tools
 		web_fetch: 'ask',
 		write_file: 'ask',
+		edit_file: 'ask',
 		read_file: 'ask',
 		list_files: 'ask',
 		read_many_files: 'ask',
@@ -432,6 +434,19 @@ export class GeminiSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.toolPermissions.write_file)
 				.onChange(async (value: ToolPermission) => {
 					this.plugin.settings.toolPermissions.write_file = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Edit File')
+			.setDesc('Control permission for edit_file tool (semantic edits: add to lists, insert at sections, replace patterns)')
+			.addDropdown(dropdown => dropdown
+				.addOption('ask', 'Ask each time')
+				.addOption('always', 'Always allow')
+				.addOption('never', 'Never allow')
+				.setValue(this.plugin.settings.toolPermissions.edit_file)
+				.onChange(async (value: ToolPermission) => {
+					this.plugin.settings.toolPermissions.edit_file = value;
 					await this.plugin.saveSettings();
 				}));
 

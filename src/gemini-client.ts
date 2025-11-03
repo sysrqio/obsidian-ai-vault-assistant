@@ -315,6 +315,50 @@ export class GeminiClient {
 					required: ['file_path', 'content']
 				}
 			});
+
+			addTool({
+				name: 'edit_file',
+				description: 'Makes semantic, context-aware edits to existing files. Supports adding items to lists, inserting content at sections, appending to files, and replacing text patterns. Use this for targeted edits like "Add Project XYZ to my weekly key projects" without rewriting the entire file.',
+				parameters: {
+					type: Type.OBJECT,
+					properties: {
+						file_path: {
+							type: Type.STRING,
+							description: 'Path to the file to edit (relative to vault root)'
+						},
+						edit_mode: {
+							type: Type.STRING,
+							enum: ['append', 'insert_at_section', 'add_to_list', 'replace_pattern'],
+							description: 'Type of edit operation: "append" - add to end of file, "insert_at_section" - insert content in a section, "add_to_list" - add item to a list in a section, "replace_pattern" - find and replace text'
+						},
+						content: {
+							type: Type.STRING,
+							description: 'Content to add (required for append and insert_at_section modes)'
+						},
+						section_header: {
+							type: Type.STRING,
+							description: 'Section header text to find (required for insert_at_section and add_to_list modes). Supports partial matching and case-insensitive search.'
+						},
+						list_item: {
+							type: Type.STRING,
+							description: 'Item to add to the list (required for add_to_list mode). Will maintain existing list format (checkboxes, bullets, etc.)'
+						},
+						search_pattern: {
+							type: Type.STRING,
+							description: 'Text pattern to find (required for replace_pattern mode)'
+						},
+						replacement_text: {
+							type: Type.STRING,
+							description: 'Text to replace with (required for replace_pattern mode)'
+						},
+						section_scope: {
+							type: Type.STRING,
+							description: 'Optional: Limit replace_pattern search to a specific section header'
+						}
+					},
+					required: ['file_path', 'edit_mode']
+				}
+			});
 		}
 
 		addTool({
@@ -765,6 +809,26 @@ export class GeminiClient {
 				}
 				await this.vaultAdapter.writeFile(sanitizedPath, args.content as string);
 				return `File written successfully: ${sanitizedPath}${sanitizedPath !== args.file_path ? ` (sanitized from: ${args.file_path})` : ''}`;
+			}
+
+			case 'edit_file': {
+				const filePath = args.file_path as string;
+				const editMode = args.edit_mode as 'append' | 'insert_at_section' | 'add_to_list' | 'replace_pattern';
+				
+				if (!editMode) {
+					throw new Error('edit_mode is required for edit_file');
+				}
+
+				return await this.vaultTools.editFile(
+					filePath,
+					editMode,
+					args.content as string | undefined,
+					args.section_header as string | undefined,
+					args.list_item as string | undefined,
+					args.search_pattern as string | undefined,
+					args.replacement_text as string | undefined,
+					args.section_scope as string | undefined
+				);
 			}
 
 				case 'web_fetch':

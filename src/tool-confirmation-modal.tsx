@@ -80,6 +80,10 @@ export class ToolConfirmationModal extends Modal {
 			warningEl.createEl('p', {
 				text: '⚠️ Gemini wants to execute a tool that will modify your vault.'
 			});
+		} else if (this.data.toolName === 'edit_file') {
+			warningEl.createEl('p', {
+				text: '✏️ Gemini wants to make semantic edits to a file (add to lists, insert at sections, replace patterns).'
+			});
 		} else {
 			warningEl.createEl('p', {
 				text: '🔧 Gemini wants to execute a tool operation.'
@@ -111,6 +115,51 @@ export class ToolConfirmationModal extends Modal {
 				new Setting(detailsEl)
 					.setName('📝 Content Preview')
 					.setDesc(contentPreview + suffix)
+					.setClass('tool-confirmation-setting');
+			}
+		} else if (this.data.toolName === 'edit_file') {
+			if (this.data.args.file_path) {
+				new Setting(detailsEl)
+					.setName('📄 File Path')
+					.setDesc(this.data.args.file_path as string)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.edit_mode) {
+				new Setting(detailsEl)
+					.setName('🔧 Edit Mode')
+					.setDesc(this.data.args.edit_mode as string)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.section_header) {
+				new Setting(detailsEl)
+					.setName('📍 Section')
+					.setDesc(this.data.args.section_header as string)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.list_item) {
+				new Setting(detailsEl)
+					.setName('📋 List Item')
+					.setDesc(this.data.args.list_item as string)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.content) {
+				const contentPreview = (this.data.args.content as string).substring(0, 200);
+				const suffix = (this.data.args.content as string).length > 200 ? '...' : '';
+				new Setting(detailsEl)
+					.setName('📝 Content')
+					.setDesc(contentPreview + suffix)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.search_pattern) {
+				new Setting(detailsEl)
+					.setName('🔍 Search Pattern')
+					.setDesc(this.data.args.search_pattern as string)
+					.setClass('tool-confirmation-setting');
+			}
+			if (this.data.args.replacement_text) {
+				new Setting(detailsEl)
+					.setName('🔄 Replacement')
+					.setDesc(this.data.args.replacement_text as string)
 					.setClass('tool-confirmation-setting');
 			}
 		} else if (this.data.toolName === 'web_fetch' && this.data.args.prompt) {
@@ -172,6 +221,7 @@ export class ToolConfirmationModal extends Modal {
 		const toolLabels = {
 			web_fetch: 'web fetch',
 			write_file: 'file writing',
+			edit_file: 'file editing',
 			read_file: 'file reading',
 			list_files: 'file listing',
 			read_many_files: 'multi-file reading',

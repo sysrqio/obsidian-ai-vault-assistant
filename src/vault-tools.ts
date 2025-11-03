@@ -549,6 +549,385 @@ export class VaultTools {
 	}
 
 	// ============================================================================
+	// File Editing Tools
+	// ============================================================================
+
+	/**
+	 * Edit file with semantic, context-aware operations
+	 */
+	async editFile(
+		filePath: string,
+		editMode: 'append' | 'insert_at_section' | 'add_to_list' | 'replace_pattern',
+		content?: string,
+		sectionHeader?: string,
+		listItem?: string,
+		searchPattern?: string,
+		replacementText?: string,
+		sectionScope?: string
+	): Promise<string> {
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		
+		if (!file || !(file instanceof TFile)) {
+			throw new Error(`File not found: ${filePath}`);
+		}
+
+		const currentContent = await this.vaultAdapter.readFile(filePath);
+		let newContent: string;
+		let resultMessage: string;
+
+		switch (editMode) {
+			case 'append':
+				if (!content) {
+					throw new Error('content is required for append mode');
+				}
+				resultMessage = await this.appendToFile(filePath, currentContent, content);
+				break;
+
+			case 'insert_at_section':
+				if (!sectionHeader || !content) {
+					throw new Error('section_header and content are required for insert_at_section mode');
+				}
+				resultMessage = await this.insertAtSection(filePath, currentContent, sectionHeader, content);
+				break;
+
+			case 'add_to_list':
+				if (!sectionHeader || !listItem) {
+					throw new Error('section_header and list_item are required for add_to_list mode');
+				}
+				resultMessage = await this.addToList(filePath, currentContent, sectionHeader, listItem);
+				break;
+
+			case 'replace_pattern':
+				if (!searchPattern || replacementText === undefined) {
+					throw new Error('search_pattern and replacement_text are required for replace_pattern mode');
+				}
+				resultMessage = await this.replacePattern(filePath, currentContent, searchPattern, replacementText, sectionScope);
+				break;
+
+			default:
+				throw new Error(`Unknown edit_mode: ${editMode}`);
+		}
+
+		return resultMessage;
+	}
+
+	/**
+	 * Append content to end of file
+	 */
+	private async appendToFile(filePath: string, currentContent: string, content: string): Promise<string> {
+		const newContent = currentContent + '\n' + content;
+		await this.vaultAdapter.writeFile(filePath, newContent);
+		return `Appended content to end of file: ${filePath}`;
+	}
+
+	/**
+	 * Insert content at a specific section
+	 */
+	private async insertAtSection(
+		filePath: string,
+		currentContent: string,
+		sectionHeader: string,
+		content: string
+	): Promise<string> {
+		const sectionInfo = this.findSection(currentContent, sectionHeader);
+		
+		if (!sectionInfo) {
+			// Suggest similar section names
+			const lines = currentContent.split('\n');
+			const headers = lines
+				.map((line, index) => ({ line, index }))
+				.filter(({ line }) => /^#{1,6}\s+/.test(line))
+				.map(({ line, index }) => ({ header: line.replace(/^#{1,6}\s+/, ''), index }));
+			
+			const suggestions = headers
+				.filter(({ header }) => 
+					header.toLowerCase().includes(sectionHeader.toLowerCase()) ||
+					sectionHeader.toLowerCase().includes(header.toLowerCase())
+				)
+				.map(({ header }) => header)
+				.slice(0, 3);
+			
+			const suggestionText = suggestions.length > 0 
+				? `\n\nSimilar section names found: ${suggestions.join(', ')}`
+				: '';
+			
+			throw new Error(`Section "${sectionHeader}" not found in file.${suggestionText}`);
+		}
+
+		const lines = currentContent.split('\n');
+		const insertLine = sectionInfo.endLine !== null ? sectionInfo.endLine : sectionInfo.startLine + 1;
+		
+		lines.splice(insertLine, 0, content);
+		const newContent = lines.join('\n');
+		await this.vaultAdapter.writeFile(filePath, newContent);
+		
+		return `Inserted content in section "${sectionInfo.matchedHeader}" at line ${insertLine + 1}: ${filePath}`;
+	}
+
+	/**
+	 * Add item to a list within a section
+	 */
+	private async addToList(
+		filePath: string,
+		currentContent: string,
+		sectionHeader: string,
+		listItem: string
+	): Promise<string> {
+		const sectionInfo = this.findSection(currentContent, sectionHeader);
+		
+		if (!sectionInfo) {
+			const lines = currentContent.split('\n');
+			const headers = lines
+				.map((line, index) => ({ line, index }))
+				.filter(({ line }) => /^#{1,6}\s+/.test(line))
+				.map(({ line }) => line.replace(/^#{1,6}\s+/, ''));
+			
+			const suggestions = headers
+				.filter(header => 
+					header.toLowerCase().includes(sectionHeader.toLowerCase()) ||
+					sectionHeader.toLowerCase().includes(header.toLowerCase())
+				)
+				.slice(0, 3);
+			
+			const suggestionText = suggestions.length > 0 
+				? `\n\nSimilar section names found: ${suggestions.join(', ')}`
+				: '';
+			
+			throw new Error(`Section "${sectionHeader}" not found in file.${suggestionText}`);
+		}
+
+		const lines = currentContent.split('\n');
+		const sectionLines = lines.slice(sectionInfo.startLine, sectionInfo.endLine !== null ? sectionInfo.endLine : lines.length);
+		
+		// Find list in section
+		const listInfo = this.detectListFormat(sectionLines);
+		
+		// Determine insertion point (after last list item or at end of section)
+		let insertLine: number;
+		if (listInfo.lastListItemLine !== null) {
+			insertLine = sectionInfo.startLine + listInfo.lastListItemLine + 1;
+		} else if (listInfo.emptyListLine !== null) {
+			// Replace empty list placeholder
+			insertLine = sectionInfo.startLine + listInfo.emptyListLine;
+			lines.splice(insertLine, 1); // Remove placeholder
+		} else {
+			// No list found, insert after header
+			insertLine = sectionInfo.startLine + 1;
+		}
+
+		// Format list item based on detected format
+		const formattedItem = this.formatListItem(listItem, listInfo);
+		
+		lines.splice(insertLine, 0, formattedItem);
+		const newContent = lines.join('\n');
+		await this.vaultAdapter.writeFile(filePath, newContent);
+		
+		return `Added "${listItem}" to list in section "${sectionInfo.matchedHeader}" (${listInfo.format} format): ${filePath}`;
+	}
+
+	/**
+	 * Replace text pattern with optional section scoping
+	 */
+	private async replacePattern(
+		filePath: string,
+		currentContent: string,
+		searchPattern: string,
+		replacementText: string,
+		sectionScope?: string
+	): Promise<string> {
+		let contentToEdit = currentContent;
+		let scopeMessage = '';
+
+		// Limit to section if specified
+		if (sectionScope) {
+			const sectionInfo = this.findSection(currentContent, sectionScope);
+			if (!sectionInfo) {
+				throw new Error(`Section scope "${sectionScope}" not found in file`);
+			}
+
+			const lines = currentContent.split('\n');
+			const sectionContent = lines.slice(sectionInfo.startLine, sectionInfo.endLine !== null ? sectionInfo.endLine : lines.length).join('\n');
+			
+			// Replace in section
+			const updatedSectionContent = sectionContent.replace(new RegExp(this.escapeRegex(searchPattern), 'g'), replacementText);
+			
+			// Reconstruct file
+			const beforeSection = lines.slice(0, sectionInfo.startLine).join('\n');
+			const afterSection = sectionInfo.endLine !== null 
+				? lines.slice(sectionInfo.endLine).join('\n')
+				: '';
+			
+			contentToEdit = beforeSection + '\n' + updatedSectionContent + (afterSection ? '\n' + afterSection : '');
+			scopeMessage = ` in section "${sectionInfo.matchedHeader}"`;
+		} else {
+			// Replace globally
+			contentToEdit = currentContent.replace(new RegExp(this.escapeRegex(searchPattern), 'g'), replacementText);
+		}
+
+		// Count how many replacements were made
+		const beforeMatches = (currentContent.match(new RegExp(this.escapeRegex(searchPattern), 'g')) || []).length;
+		const afterMatches = (contentToEdit.match(new RegExp(this.escapeRegex(searchPattern), 'g')) || []).length;
+		const replacementCount = beforeMatches - afterMatches;
+		
+		await this.vaultAdapter.writeFile(filePath, contentToEdit);
+		
+		return `Replaced "${searchPattern}" with "${replacementText}"${scopeMessage} (${replacementCount} occurrence(s)): ${filePath}`;
+	}
+
+	/**
+	 * Find section by header (supports partial matching and case-insensitive)
+	 */
+	private findSection(content: string, headerText: string): { startLine: number; endLine: number | null; matchedHeader: string } | null {
+		const lines = content.split('\n');
+		const normalizedSearch = this.normalizeHeader(headerText);
+		
+		let sectionStart: number | null = null;
+		let sectionEnd: number | null = null;
+		let matchedHeader: string | null = null;
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+			
+			if (headerMatch) {
+				const headerContent = headerMatch[2];
+				const normalizedHeader = this.normalizeHeader(headerContent);
+				
+				// If we found our section, close previous section
+				if (sectionStart !== null && sectionEnd === null) {
+					sectionEnd = i - 1;
+				}
+				
+				// Check if this matches our search (partial match, case-insensitive)
+				if (normalizedHeader.includes(normalizedSearch) || normalizedSearch.includes(normalizedHeader)) {
+					sectionStart = i;
+					sectionEnd = null; // Reset to find end
+					matchedHeader = headerContent;
+				}
+			}
+		}
+
+		if (sectionStart !== null) {
+			return {
+				startLine: sectionStart,
+				endLine: sectionEnd,
+				matchedHeader: matchedHeader || headerText
+			};
+		}
+
+		return null;
+	}
+
+	/**
+	 * Detect list format in section lines
+	 */
+	private detectListFormat(sectionLines: string[]): {
+		format: 'checkbox' | 'bullet' | 'number' | 'none';
+		indentation: number;
+		marker: string;
+		lastListItemLine: number | null;
+		emptyListLine: number | null;
+	} {
+		// Patterns for different list types
+		const checkboxPattern = /^(\s*)(-\s+\[[\sx]\]\s+)/;
+		const bulletPattern = /^(\s*)([-*]\s+)/;
+		const numberPattern = /^(\s*)(\d+\.\s+)/;
+		
+		let format: 'checkbox' | 'bullet' | 'number' | 'none' = 'none';
+		let indentation = 0;
+		let marker = '- [ ]';
+		let lastListItemLine: number | null = null;
+		let emptyListLine: number | null = null;
+
+		// Find first list item to detect format
+		for (let i = 0; i < sectionLines.length; i++) {
+			const line = sectionLines[i];
+			
+			// Check for empty list indicators (placeholder text)
+			if (line.trim() === '' && i > 0 && lastListItemLine !== null) {
+				emptyListLine = i;
+				continue;
+			}
+			
+			if (checkboxPattern.test(line)) {
+				format = 'checkbox';
+				const match = line.match(checkboxPattern);
+				indentation = match ? match[1].length : 0;
+				marker = '- [ ]';
+				lastListItemLine = i;
+			} else if (bulletPattern.test(line)) {
+				if (format === 'none') {
+					format = 'bullet';
+					const match = line.match(bulletPattern);
+					indentation = match ? match[1].length : 0;
+					marker = match ? match[2].trim() : '-';
+				}
+				lastListItemLine = i;
+			} else if (numberPattern.test(line)) {
+				if (format === 'none') {
+					format = 'number';
+					const match = line.match(numberPattern);
+					indentation = match ? match[1].length : 0;
+				}
+				lastListItemLine = i;
+			}
+		}
+
+		return {
+			format,
+			indentation,
+			marker,
+			lastListItemLine,
+			emptyListLine
+		};
+	}
+
+	/**
+	 * Format list item based on detected format
+	 */
+	private formatListItem(item: string, listInfo: {
+		format: 'checkbox' | 'bullet' | 'number' | 'none';
+		indentation: number;
+		marker: string;
+	}): string {
+		const indent = ' '.repeat(listInfo.indentation);
+		
+		switch (listInfo.format) {
+			case 'checkbox':
+				return `${indent}- [ ] ${item}`;
+			case 'bullet':
+				return `${indent}${listInfo.marker} ${item}`;
+			case 'number':
+				// For numbered lists, we'll use a placeholder number
+				// The actual number will depend on context, but 1 is safe
+				return `${indent}1. ${item}`;
+			case 'none':
+			default:
+				// Default to checkbox format for new lists
+				return `${indent}- [ ] ${item}`;
+		}
+	}
+
+	/**
+	 * Normalize header text for matching (remove emojis, normalize whitespace, lowercase)
+	 */
+	private normalizeHeader(header: string): string {
+		// Remove emojis and special characters, keep alphanumeric and spaces
+		return header
+			.replace(/[^\w\s]/g, '')
+			.replace(/\s+/g, ' ')
+			.toLowerCase()
+			.trim();
+	}
+
+	/**
+	 * Escape regex special characters
+	 */
+	private escapeRegex(str: string): string {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	// ============================================================================
 	// Phase 4: Advanced Tools
 	// ============================================================================
 

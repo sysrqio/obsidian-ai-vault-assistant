@@ -206,7 +206,14 @@ export class OAuthGeminiClient implements IGeminiAPIClient {
 					maxOutputTokens: config.maxOutputTokens,
 					topP: 1
 				},
-				tools: config.tools && config.tools.length > 0 ? [{ functionDeclarations: config.tools }] : [],
+				// OAuth API expects: [{ function_declarations: [...] }] (snake_case!)
+				// config.tools is in format: [{ functionDeclarations: [...] }] (camelCase)
+				// Need to convert camelCase to snake_case for OAuth API
+				tools: config.tools && config.tools.length > 0 && config.tools[0]?.functionDeclarations
+					? [{
+						function_declarations: config.tools[0].functionDeclarations
+					}]
+					: [],
 				systemInstruction: config.systemInstruction ? {
 					role: 'user',
 					parts: [{ text: config.systemInstruction }]

@@ -90,6 +90,7 @@ export const mockSettings = {
 	toolPermissions: {
 		web_fetch: 'ask' as const,
 		write_file: 'ask' as const,
+		edit_file: 'ask' as const,
 		read_file: 'ask' as const,
 		list_files: 'ask' as const,
 		read_many_files: 'ask' as const,
@@ -164,8 +165,32 @@ export class MockVaultAdapter {
  * Mock App for testing
  */
 export const createMockApp = (vault: MockVault): any => {
+	const mockVault = {
+		...vault,
+		getMarkdownFiles: () => vault.getFiles().filter(file => file.path.endsWith('.md')),
+		getAllFolders: () => {
+			const folders = new Set<string>();
+			vault.getFiles().forEach(file => {
+				const parts = file.path.split('/');
+				for (let i = 1; i < parts.length; i++) {
+					folders.add(parts.slice(0, i).join('/'));
+				}
+			});
+			return Array.from(folders).map(path => ({ path } as any));
+		},
+		adapter: {
+			exists: async () => false,
+			read: async () => '',
+			write: async () => {},
+			mkdir: async () => {},
+			list: async () => [],
+			stat: async () => null,
+			rm: async () => {}
+		}
+	};
+	
 	return {
-		vault,
+		vault: mockVault,
 		workspace: {
 			getActiveFile: () => null,
 			getLeaf: () => ({

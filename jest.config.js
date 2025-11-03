@@ -30,6 +30,10 @@ module.exports = {
 	// Increase timeout for integration tests
 	testPathIgnorePatterns: ['/node_modules/'],
 	// Set environment variables for tests
-	setupFiles: ['<rootDir>/tests/setup-env.js']
+	setupFiles: ['<rootDir>/tests/setup-env.js'],
+	// Enable experimental VM modules for OAuth/gaxios dynamic imports
+	testEnvironmentOptions: {
+		nodeOptions: '--experimental-vm-modules'
+	}
 };
 

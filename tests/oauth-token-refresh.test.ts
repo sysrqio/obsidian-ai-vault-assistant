@@ -188,28 +188,42 @@ describe('OAuth Token Refresh', () => {
 	});
 
 	test('should handle refresh token failure gracefully', async () => {
-		// Mock OAuthHandler to throw error
-		const mockInitialize = jest.fn().mockResolvedValue(undefined);
-		const mockRefreshToken = jest.fn().mockRejectedValue(new Error('Refresh failed'));
-		
-		jest.spyOn(OAuthHandler.prototype, 'initialize').mockImplementation(mockInitialize);
-		jest.spyOn(OAuthHandler.prototype, 'refreshToken').mockImplementation(mockRefreshToken);
+		// Suppress Logger.error output during this test to reduce noise
+		const Logger = require('../src/utils/logger').Logger;
+		const originalError = Logger.error;
+		const mockError = jest.fn();
+		Logger.error = mockError;
 
-		// Create client with expired token
-		const settings = {
-			...mockOAuthSettings,
-			oauthExpiresAt: Date.now() - 3600000 // Expired
-		};
+		try {
+			// Mock OAuthHandler to throw error
+			const mockInitialize = jest.fn().mockResolvedValue(undefined);
+			const mockRefreshToken = jest.fn().mockRejectedValue(new Error('Refresh failed'));
+			
+			jest.spyOn(OAuthHandler.prototype, 'initialize').mockImplementation(mockInitialize);
+			jest.spyOn(OAuthHandler.prototype, 'refreshToken').mockImplementation(mockRefreshToken);
 
-		client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);
-		
-		// Access private method for testing
-		const ensureValidOAuthToken = (client as any).ensureValidOAuthToken.bind(client);
-		
-		// Should throw error with proper message
-		await expect(ensureValidOAuthToken()).rejects.toThrow(
-			'OAuth token refresh failed: Refresh failed'
-		);
+			// Create client with expired token
+			const settings = {
+				...mockOAuthSettings,
+				oauthExpiresAt: Date.now() - 3600000 // Expired
+			};
+
+			client = new GeminiClient(settings, vaultAdapter as any, '/test-vault', testDir, {} as any);
+			
+			// Access private method for testing
+			const ensureValidOAuthToken = (client as any).ensureValidOAuthToken.bind(client);
+			
+			// Should throw error with proper message
+			await expect(ensureValidOAuthToken()).rejects.toThrow(
+				'OAuth token refresh failed: Refresh failed'
+			);
+
+			// Verify error was logged (but we suppressed console.error)
+			expect(mockError).toHaveBeenCalled();
+		} finally {
+			// Restore original Logger.error
+			Logger.error = originalError;
+		}
 	});
 
 	test('should return early when OAuth is disabled', async () => {

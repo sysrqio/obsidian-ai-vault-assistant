@@ -3,12 +3,16 @@
  * Tests the basic "how can you help me?" message with both API Key and OAuth
  */
 
+import { config } from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { GeminiClient } from '../../src/gemini-client';
 import { MockVault, MockVaultAdapter, mockSettings } from '../setup';
-import * as fs from 'fs/promises';
 
-// Test credentials from environment variables or data.json
-// For local testing, use data.json (gitignored) or set environment variables
+// Load environment variables from .env file
+config({ path: path.join(__dirname, '../../.env') });
+
+// Test credentials from environment variables or .env file
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const OAUTH_CLIENT_ID = process.env.GEMINI_OAUTH_CLIENT_ID || '';
 const OAUTH_CLIENT_SECRET = process.env.GEMINI_OAUTH_CLIENT_SECRET || '';
